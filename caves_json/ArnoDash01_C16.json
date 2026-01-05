@@ -10,8 +10,8 @@
             120
         ],
         "Colors": [
-            "cyan",
-            "green",
+            "teale",
+            "mid-green",
             "white"
         ],
         "DiamondExtraValue": 20,
@@ -67,9 +67,9 @@
             100
         ],
         "Colors": [
-            "white",
-            "blue",
-            "lt.purple"
+            "grey",
+            "violet",
+            "white"
         ],
         "DiamondExtraValue": 40,
         "DiamondValue": 35,
@@ -125,8 +125,8 @@
             180
         ],
         "Colors": [
-            "purple",
-            "cyan",
+            "dark-pink",
+            "teale",
             "white"
         ],
         "DiamondExtraValue": 20,
@@ -183,9 +183,9 @@
             180
         ],
         "Colors": [
-            "cyan",
-            "green",
-            "pink"
+            "tan",
+            "mid-green",
+            "white"
         ],
         "DiamondExtraValue": 12,
         "DiamondValue": 10,
@@ -241,8 +241,8 @@
             30
         ],
         "Colors": [
-            "purple",
-            "blue",
+            "mid-green",
+            "grey",
             "white"
         ],
         "DiamondExtraValue": 45,
@@ -289,9 +289,9 @@
             200
         ],
         "Colors": [
-            "cyan",
-            "purple",
-            "pink"
+            "teale",
+            "tan",
+            "white"
         ],
         "DiamondExtraValue": 26,
         "DiamondValue": 26,
@@ -346,8 +346,8 @@
             130
         ],
         "Colors": [
-            "red",
-            "green",
+            "grey",
+            "mid-green",
             "white"
         ],
         "DiamondExtraValue": 6,
@@ -403,9 +403,9 @@
             200
         ],
         "Colors": [
-            "cyan",
-            "blue",
-            "pink"
+            "dark-pink",
+            "grey",
+            "white"
         ],
         "DiamondExtraValue": 5,
         "DiamondValue": 4,
@@ -461,9 +461,9 @@
             200
         ],
         "Colors": [
-            "purple",
-            "green",
-            "lt.orange"
+            "violet",
+            "dark-pink",
+            "white"
         ],
         "DiamondExtraValue": 5,
         "DiamondValue": 4,
@@ -518,8 +518,8 @@
             20
         ],
         "Colors": [
-            "cyan",
-            "red",
+            "tan",
+            "teale",
             "white"
         ],
         "DiamondExtraValue": 35,
@@ -566,9 +566,9 @@
             180
         ],
         "Colors": [
-            "purple",
-            "green",
-            "pink"
+            "teale",
+            "violet",
+            "white"
         ],
         "DiamondExtraValue": 25,
         "DiamondValue": 22,
@@ -624,8 +624,8 @@
             160
         ],
         "Colors": [
-            "cyan",
-            "purple",
+            "grey",
+            "tan",
             "white"
         ],
         "DiamondExtraValue": 30,
@@ -681,9 +681,9 @@
             160
         ],
         "Colors": [
-            "red",
-            "green",
-            "pink"
+            "dark-pink",
+            "mid-green",
+            "white"
         ],
         "DiamondExtraValue": 21,
         "DiamondValue": 21,
@@ -738,8 +738,8 @@
             150
         ],
         "Colors": [
-            "green",
-            "cyan",
+            "mid-green",
+            "teale",
             "white"
         ],
         "DiamondExtraValue": 10,
@@ -795,9 +795,9 @@
             40
         ],
         "Colors": [
-            "cyan",
-            "red",
-            "pink"
+            "tan",
+            "grey",
+            "white"
         ],
         "DiamondExtraValue": 30,
         "DiamondValue": 20,
@@ -843,8 +843,8 @@
             150
         ],
         "Colors": [
-            "green",
-            "purple",
+            "teale",
+            "dark-pink",
             "white"
         ],
         "DiamondExtraValue": 20,
@@ -900,9 +900,9 @@
             160
         ],
         "Colors": [
-            "purple",
-            "blue",
-            "pink"
+            "grey",
+            "teale",
+            "white"
         ],
         "DiamondExtraValue": 9,
         "DiamondValue": 9,
@@ -957,9 +957,9 @@
             200
         ],
         "Colors": [
-            "cyan",
-            "purple",
-            "lt.orange"
+            "dark-pink",
+            "violet",
+            "white"
         ],
         "DiamondExtraValue": 90,
         "DiamondValue": 18,
@@ -1015,8 +1015,8 @@
             180
         ],
         "Colors": [
-            "purple",
-            "green",
+            "mid-green",
+            "dark-pink",
             "white"
         ],
         "DiamondExtraValue": 15,
@@ -1073,9 +1073,9 @@
             36
         ],
         "Colors": [
-            "cyan",
-            "blue",
-            "lt.orange"
+            "violet",
+            "grey",
+            "white"
         ],
         "DiamondExtraValue": 14,
         "DiamondValue": 14,
@@ -1122,8 +1122,8 @@
             10
         ],
         "Colors": [
-            "purple",
-            "red",
+            "violet",
+            "tan",
             "white"
         ],
         "DiamondExtraValue": 1,
