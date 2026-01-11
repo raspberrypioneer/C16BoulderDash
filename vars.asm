@@ -130,19 +130,25 @@ sprite_addr_earth2
 
 sprite_addr_wall1
 sprite_addr_wall2
-  !byte 69,70,69,70
+  !byte 69,69,69,69
 
 sprite_addr_magic_wall1
-  !byte 71,72,71,72
+  !byte 70,70,70,70
 sprite_addr_magic_wall2
-  !byte 73,74,73,74
+  !byte 71,71,71,71
 sprite_addr_magic_wall3
-  !byte 75,76,75,76
+  !byte 72,72,72,72
 sprite_addr_magic_wall4
-  !byte 77,78,77,78
+  !byte 73,73,73,73
 
 sprite_addr_titanium_wall1  ;reuse characters
 sprite_addr_titanium_wall2
+  !byte 74,74,74,74
+
+sprite_addr_pathway
+  !byte 75,76,77,78
+
+sprite_addr_anti_space
   !byte 79,79,79,79
 
 sprite_addr_diamond1
@@ -241,12 +247,6 @@ sprite_addr_bomb2
 sprite_addr_bomb3
   !byte 205,206,207,208
 
-sprite_addr_pathway
-  !byte 209,210,211,212
-
-sprite_addr_anti_space
-  !byte 213,213,213,213
-
 ; *************************************************************************************
 ; Sprite handler routine addresses
 ;
@@ -311,7 +311,7 @@ slime_animated_sprite0
   !byte sprite_amoeba1                                                                ; cell type $09 = map_slime
   !byte $4c                                                                           ; cell type $0A = map_explosion
   !byte sprite_bomb1                                                                  ; cell type $0B = map_bomb
-  !byte sprite_magic_wall1                                                            ; cell type $0C = map_growing_wall
+  !byte sprite_wall1                                                                  ; cell type $0C = map_growing_wall
   !byte sprite_wall2                                                                  ; cell type $0D = map_magic_wall
   !byte sprite_butterfly1                                                             ; cell type $0E = map_butterfly
 rockford_sprite
@@ -328,7 +328,7 @@ rockford_sprite
   !byte sprite_amoeba1                                                                ; cell type $19 = map_slime | map_anim_state1
   !byte sprite_firefly4                                                               ; cell type $1A = map_explosion | map_anim_state1
   !byte sprite_bomb2                                                                  ; cell type $1B = map_bomb | map_anim_state1
-  !byte sprite_magic_wall1                                                            ; cell type $1C = map_growing_wall | map_anim_state1
+  !byte sprite_wall1                                                                  ; cell type $1C = map_growing_wall | map_anim_state1
   !byte sprite_magic_wall1                                                            ; cell type $1D = map_magic_wall | map_anim_state1
   !byte sprite_butterfly1                                                             ; cell type $1E = map_butterfly | map_anim_state1
   !byte sprite_rockford_moving_left3                                                  ; cell type $1F = map_rockford | map_anim_state1
@@ -344,7 +344,7 @@ rockford_sprite
   !byte sprite_amoeba2                                                                ; cell type $29 = map_slime | map_anim_state2
   !byte $46                                                                           ; cell type $2A = map_explosion | map_anim_state2
   !byte sprite_bomb3                                                                  ; cell type $2B = map_bomb | map_anim_state2
-  !byte sprite_magic_wall1                                                            ; cell type $2C = map_growing_wall | map_anim_state2
+  !byte sprite_wall1                                                                  ; cell type $2C = map_growing_wall | map_anim_state2
   !byte sprite_wall2                                                                  ; cell type $2D = map_magic_wall | map_anim_state2
   !byte sprite_butterfly1                                                             ; cell type $2E = map_butterfly | map_anim_state2
   !byte sprite_rockford_moving_right4                                                 ; cell type $2F = map_rockford | map_anim_state2
@@ -360,7 +360,7 @@ rockford_sprite
   !byte sprite_amoeba2                                                                ; cell type $39 = map_slime | map_anim_state3
   !byte sprite_firefly4                                                               ; cell type $3A = map_explosion | map_anim_state3
   !byte sprite_bomb4                                                                  ; cell type $3B = map_bomb | map_anim_state3
-  !byte sprite_magic_wall1                                                            ; cell type $3C = map_growing_wall | map_anim_state3
+  !byte sprite_wall1                                                                  ; cell type $3C = map_growing_wall | map_anim_state3
   !byte sprite_wall2                                                                  ; cell type $3D = map_magic_wall | map_anim_state3
   !byte sprite_butterfly1                                                             ; cell type $3E = map_butterfly | map_anim_state3
   !byte sprite_rockford_tapping_foot4                                                 ; cell type $3F = map_rockford | map_anim_state3
@@ -378,7 +378,7 @@ slime_animated_sprite1
   !byte sprite_amoeba2                                                                ; cell type $49 = map_slime | map_anim_state4
   !byte sprite_firefly4                                                               ; cell type $4A = map_explosion | map_anim_state4
   !byte sprite_bomb1                                                                  ; cell type $4B = map_bomb | map_anim_state4
-  !byte sprite_magic_wall1                                                            ; cell type $4D = map_growing_wall | map_anim_state4
+  !byte sprite_wall1                                                                  ; cell type $4D = map_growing_wall | map_anim_state4
   !byte sprite_boulder1                                                               ; cell type $4C = map_magic_wall | map_anim_state4
   !byte sprite_butterfly2                                                             ; cell type $4E = map_butterfly | map_anim_state4
   !byte sprite_rockford_moving_right3                                                 ; cell type $4F = map_rockford | map_anim_state4
@@ -394,7 +394,7 @@ slime_animated_sprite1
   !byte sprite_amoeba1                                                                ; cell type $59 = map_slime | map_anim_state5
   !byte sprite_firefly4                                                               ; cell type $5A = map_explosion | map_anim_state5
   !byte sprite_bomb2                                                                  ; cell type $5B = map_bomb | map_anim_state5
-  !byte sprite_magic_wall1                                                            ; cell type $5C = map_growing_wall | map_anim_state5
+  !byte sprite_wall1                                                                  ; cell type $5C = map_growing_wall | map_anim_state5
   !byte sprite_magic_wall2                                                            ; cell type $5D = map_magic_wall | map_anim_state5
   !byte sprite_butterfly2                                                             ; cell type $5E = map_butterfly | map_anim_state5
   !byte sprite_rockford_moving_left2                                                  ; cell type $5F = map_rockford | map_anim_state5
@@ -410,7 +410,7 @@ slime_animated_sprite1
   !byte sprite_amoeba1                                                                ; cell type $69 = map_slime | map_anim_state6
   !byte sprite_firefly4                                                               ; cell type $6A = map_explosion | map_anim_state6
   !byte sprite_bomb3                                                                  ; cell type $6B = map_bomb | map_anim_state6
-  !byte sprite_magic_wall1                                                            ; cell type $6C = map_growing_wall | map_anim_state6
+  !byte sprite_wall1                                                                  ; cell type $6C = map_growing_wall | map_anim_state6
   !byte sprite_explosion2                                                             ; cell type $6D = map_magic_wall | map_anim_state6
   !byte sprite_butterfly2                                                             ; cell type $6E = map_butterfly | map_anim_state6
   !byte sprite_rockford_tapping_foot4                                                 ; cell type $6F = map_rockford | map_anim_state6
@@ -426,7 +426,7 @@ slime_animated_sprite1
   !byte sprite_amoeba2                                                                ; cell type $79 = map_slime | map_anim_state7
   !byte sprite_firefly4                                                               ; cell type $7A = map_explosion | map_anim_state7
   !byte sprite_bomb4                                                                  ; cell type $7B = map_bomb | map_anim_state7
-  !byte sprite_magic_wall1                                                            ; cell type $7C = map_growing_wall | map_anim_state7
+  !byte sprite_wall1                                                                  ; cell type $7C = map_growing_wall | map_anim_state7
   !byte sprite_explosion1                                                             ; cell type $7D = map_magic_wall | map_anim_state7
   !byte sprite_butterfly2                                                             ; cell type $7E = map_butterfly | map_anim_state7
   !byte sprite_explosion1                                                             ; cell type $7F = map_rockford | map_anim_state7
@@ -735,6 +735,12 @@ items_allowed_through_slime
 ; *************************************************************************************
 ; Direction handling
 ;
+direction_key_table
+  !byte KEY_MASK_RIGHT
+  !byte KEY_MASK_LEFT
+  !byte KEY_MASK_UP
+  !byte KEY_MASK_DOWN
+
 rock_push_directions  ;direction pointer to cell beyond the rock being pushed
   !byte $43, $3f, 0, $c1  ;right, left, up, down. Up can change in game when gravity is on/off
 
@@ -773,6 +779,21 @@ cave_play_order
   !byte 13, 14, 15, 19
   !byte 4, 8, 12, 0
 
+version_selection_cycle_up
+  !byte 5,0,1,2,3,4
+version_selection_cycle_down
+  !byte 1,2,3,4,5,0
+
+cave_selection_cycle_up
+  !byte 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,0
+cave_selection_cycle_down
+  !byte 15,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14
+
+level_selection_cycle_up
+  !byte 0,2,3,4,5,1
+level_selection_cycle_down
+  !byte 0,5,1,2,3,4
+
 ; *************************************************************************************
 ; self-mod code table
 ;
@@ -788,16 +809,18 @@ self_mod_code_table
 ; status bar and messages
 ;
 status_bar_line
-  !byte 249
+  !byte 244
   !scr "000 "
-  !byte 251
+  !byte 246
   !scr "000  score 00000  "
-  !byte 250
-  !scr "000 "
-  !byte 252
-  !scr "00 cave Z9"
+  !byte 247
+  !scr "00 "
+  !byte 245
+  !scr "    cave Z9"
 
 status_messages
+status_message_clear
+  !fill 16, " "
 status_message_paused
   !scr "     paused     "
 status_message_got_all_diamonds
@@ -812,6 +835,8 @@ status_message_bonus_life
   !scr "   bonus life   "
 status_message_game_over
   !scr "   game over    "
+status_message_loading
+  !scr "loading...      "
 
 cave_version_prefix
   !scr "BD1-"
@@ -820,10 +845,6 @@ cave_version_prefix
   !scr "BP1-"
   !scr "AR1-"
   !scr "AR2-"
-
-loading_text
-  !scr "loading...     "
-  !byte 0
 
 version_choices_text
   !scr "boulder dash 1 "
@@ -844,28 +865,3 @@ game_title
 
 game_options
   !scr "select cave  a  level  1  fire to start "
-
-; *************************************************************************************
-; title theme tune
-;
-theme_voice_1
-  !byte 156,176,189,205,167,181,189,211,193,199,205,213,199,226,202,222
-  !byte 156,205,189,167,144,211,167,144,156,205,189,167,193,230,205,193
-  !byte 144,199,181,156,185,227,199,185,189,202,137,205,181,181,218,181
-  !byte 205,205,205,205,205,205,205,205,205,205,205,205,205,205,205,205
-  !byte 205,205,205,205,205,205,205,205,205,205,205,205,199,199,199,199
-  !byte 205,230,205,227,205,226,205,222,199,227,199,227,199,218,199,227
-  !byte 205,205,205,205,205,205,205,205,205,205,205,205,199,199,199,199
-  !byte 216,205,189,176,211,199,181,144,216,205,189,176,211,199,181,144
-  !byte 0
-
-theme_voice_2
-  !byte 156,189,156,172,144,137,144,181,130,130,130,130,144,218,150,213
-  !byte 156,156,156,156,144,144,144,144,156,156,156,156,130,130,130,130
-  !byte 144,144,144,144,185,185,185,185,189,189,189,189,181,181,156,156
-  !byte 156,156,156,156,156,156,156,156,144,144,144,144,144,144,144,144
-  !byte 156,216,156,218,156,216,156,218,144,216,144,218,144,211,144,213
-  !byte 156,156,156,222,156,156,156,213,144,144,144,144,144,144,144,144
-  !byte 156,216,156,218,156,216,156,218,144,216,144,218,144,211,144,213
-  !byte 205,189,176,156,199,181,167,144,222,216,205,189,181,167,144,144
-  !byte 0

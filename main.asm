@@ -3,14 +3,32 @@
 ; by raspberrypioneer Dec 2025
 ;
 
-_SCREEN_ADDR = $c00  ;3072
-_COLOUR_SCREEN_ADDR = $800  ;2048
-_CLEAR_SCREEN = $c567
-_BACKGROUND_COLOUR_ADDR = $FF15  ;65301
-_COLOUR_REGISTER_1_ADDR = $FF16  ;65302
-_COLOUR_REGISTER_2_ADDR = $FF17  ;65303
-_COLOUR_REGISTER_3_ADDR = $FF18  ;65304
-_BORDER_COLOUR_ADDR = $FF19    ;65305
+_SCREEN_ADDR = $c00  ;3072 screen address
+_COLOUR_SCREEN_ADDR = $800  ;2048 colour screen address
+
+_BACKGROUND_COLOUR_ADDR = $ff15  ;65301 background colour
+_COLOUR_REGISTER_1_ADDR = $ff16  ;65302 colour register 1
+_COLOUR_REGISTER_2_ADDR = $ff17  ;65303 colour register 2
+_COLOUR_REGISTER_3_ADDR = $ff18  ;65304 colour register 3
+_BORDER_COLOUR_ADDR = $ff19  ;65305 border colour
+
+_VOICE_1_LOW = $ff0e  ;65294 voice 1 frequency low byte
+_VOICE_1_HIGH = $ff12  ;65298 voice 1 frequency high 2 bits 0,1
+_VOICE_2_LOW = $ff0f  ;65295 voice 2 frequency low byte
+_VOICE_2_HIGH = $ff10  ;65296 voice 2 frequency high 2 bits 0,1
+_VOLUME_SELECT = $ff11  ;65297 volume bits 0-3; voice 1,2,noise on/off bits 4-6; sound off/on bit 7
+
+_KEYBOARD_LATCH = $ff08  ;65288 keyboard / joystick latch
+_KEYBOARD_COL_SELECT = $fd30  ;64816 keyboard column selector
+
+_CLEAR_SCREEN = $c567  ;ROM: SCNCLR, clear screen
+_KERNAL_SETLFS = $ffba  ;Kernal: SETLFS, set logical first and second addresses
+_KERNAL_SETNAM = $ffbd  ;Kernal: SETNAM, set filename
+_KERNAL_LOADSP = $ffd5  ;Kernal: LOAD, load into memory from device
+
+_CHARACTER_BASE_ADDR = $ff13  ;65299 character data base address bits 2-7
+_TED_ROM_RAM_SELECT = $ff12  ;65298 TED data fetch ROM/RAM select bit 2
+_MULTICOLOUR_MODE = $ff07  ;65287 multicolor mode bit 4 on/off, hardware reverse characters bit 7 off/on
 
 ;map elements defines
 map_space=0
@@ -117,32 +135,33 @@ KEY_MASK_PAUSE=32
 KEY_MASK_FIRE=64
 
 ;status_messages
-message_clear=255
-message_paused=0
-message_got_all_diamonds=16
-message_no_bombs_left=32
-message_hurry_up=48
-message_out_of_time=64
-message_bonus_life=80
-message_game_over=96
+message_none=0
+message_clear=16
+message_paused=32
+message_got_all_diamonds=48
+message_no_bombs_left=64
+message_hurry_up=80
+message_out_of_time=96
+message_bonus_life=112
+message_game_over=128
+message_loading=144
 
 ;sounds
 no_sound=0
 rockford_move_sound=1
-got_earth_sound=7
-rock_move_sound=13
-enter_cave_sound=29
-explosion_sound=45
-got_diamond_sound=61
-diamond_move_sound=77
-hurry_sound=77;  ;same as diamond_move_sound
-got_all_diamonds_sound=93
-bonus_life_sound=93  ;same as got_all_diamonds_sound
-exit_cave_sound=114
-magic_wall_sound=130
-growing_wall_sound=130  ;same as magic_wall_sound
-amoeba_sound=146
-random_sound=162
+rock_move_sound=12
+enter_cave_sound=28
+explosion_sound=44
+got_diamond_sound=65
+diamond_move_sound=81
+hurry_sound=81;  ;same as diamond_move_sound
+got_all_diamonds_sound=97
+bonus_life_sound=97  ;same as got_all_diamonds_sound
+exit_cave_sound=118
+magic_wall_sound=134
+growing_wall_sound=134  ;same as magic_wall_sound
+amoeba_sound=134  ;same as magic_wall_sound
+random_sound=150
 
 ; *************************************************************************************
 zero_page_start
@@ -243,23 +262,23 @@ play_ambient_sound_fx = $71
   ;set the location of custom characters and font
   ;The graphic chip character base address is set to 8192 ($2000)
   ;poke 65299, (peek(65299) and 3) or 32
-  lda 65299
+  lda _CHARACTER_BASE_ADDR
   and #3
   ora #32
-  sta 65299
+  sta _CHARACTER_BASE_ADDR
 
   ;The graphic chip reads character patterns from RAM
   ;poke 65298, peek(65298) and 251
-  lda 65298
-  and #251
-  sta 65298
+  lda _TED_ROM_RAM_SELECT
+  and #251  ;point to RAM
+  sta _TED_ROM_RAM_SELECT
 
   ;Set multi-colour mode and expand the redefined character range to 256 characters
   ;poke 65287, peek(65287) or (16+128)
-  lda 65287  ;ff07
+  lda _MULTICOLOUR_MODE  ;ff07
   ora #16  ;multi-colour mode
   ora #128  ;expand the character set to 256 separate patterns by turning off the reverse setting
-  sta 65287
+  sta _MULTICOLOUR_MODE
 
 ; *************************************************************************************
 ; Select version to play
@@ -362,11 +381,11 @@ version_display
   jsr show_version_text
 
 version_selection_delay
-  lda #50
+  lda #20
   sta temp1
   ldx #$ff
   jsr delay_a_bit_longer
-  lda #30
+  lda #4
   sta version_selection_delay+1
 
 version_loop
@@ -405,13 +424,12 @@ set_cave_name
   bne set_cave_name
 
   ldy #0
-loading_message
-  lda loading_text,y
-  beq end_loading_message
+loading_message_loop
+  lda status_message_loading,y
   sta _SCREEN_ADDR+op_start_pos,y
   iny
-  bne loading_message
-end_loading_message
+  cpy #16
+  bne loading_message_loop
   rts
 
 version_down
@@ -428,11 +446,6 @@ version_up
 
 version_selected
   !byte 0
-
-version_selection_cycle_up
-  !byte 5,0,1,2,3,4
-version_selection_cycle_down
-  !byte 1,2,3,4,5,0
 
 show_version_text
   ldx #0  ;data position counter
@@ -479,13 +492,13 @@ end_version_char_line
 ; Load and display the intro screen, accept the cave, level, keyset from the user and start the game
 intro_and_cave_select
 
-  jsr _CLEAR_SCREEN
   lda #25  ;Cave Z (intro cave)
   sta cave_number
 
   ;set-up cave and variables
   jsr load_cave_for_version
   jsr initialise_variables
+  jsr _CLEAR_SCREEN
   jsr populate_cave_from_loaded_data
 
   ;set visible map and Rockford position for drawing grid
@@ -518,20 +531,16 @@ intro_and_cave_select
   sta growing_wall_handler_high
 
   ;initialise sound variables and switch interrupt sound actions to the theme tune
-;  jsr note_end
-;  lda #0
-;  sta theme_note_duration
+  jsr note_end
 
-;TODO: add sounds
-;  lda _VOLUME  ;set volume to max
-;  and #240
-;  ora #15
-;  sta _VOLUME
+  lda #15  ;set volume to max
+  ora #48  ;turn on voices 1,2
+  sta _VOLUME_SELECT
 
-;  lda #<play_theme_tune
-;  sta interrupt_actions+1
-;  lda #>play_theme_tune
-;  sta interrupt_actions+2
+  lda #<play_theme_tune
+  sta interrupt_sound+1
+  lda #>play_theme_tune
+  sta interrupt_sound+2
 
   ;set title text
   jsr set_title_text
@@ -590,6 +599,17 @@ wait_for_keypress
 
 exit_intro_keypress
 
+  ;switch interrupt sound actions back to normal for gameplay
+  jsr note_end
+
+  lda #0
+  sta play_ambient_sound_fx
+
+  lda #<update_sounds
+  sta interrupt_sound+1
+  lda #>update_sounds
+  sta interrupt_sound+2
+
   ;nop out the tile check logic in draw grid (self-mod code)
   ldx #12
   jsr self_mod_code
@@ -604,13 +624,6 @@ exit_intro_keypress
   lda #>handler_growing_wall
   sta growing_wall_handler_high
 
-  ;switch interrupt sound actions back to normal for gameplay
-;  jsr note_end
-;TODO: add sounds
-;  lda #<update_sounds
-;  sta interrupt_actions+1
-;  lda #>update_sounds
-;  sta interrupt_actions+2
   rts
 
 cave_down
@@ -649,16 +662,6 @@ level_display
   sta _SCREEN_ADDR+23
   jmp wait_for_keypress
 
-cave_selection_cycle_up
-  !byte 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,0
-cave_selection_cycle_down
-  !byte 15,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14
-
-level_selection_cycle_up
-  !byte 0,2,3,4,5,1
-level_selection_cycle_down
-  !byte 0,5,1,2,3,4
-
 handler_null
   rts
 
@@ -681,7 +684,19 @@ game_title_loop
 ; Game action starts here, playing one of Rockford's lives
 play_one_life
 
+  ;cave letter and difficulty level on status bar
+  ldy cave_number
+  iny
+  sty status_bar_line+38
+  lda difficulty_level
+  clc
+  adc #48
+  sta status_bar_line+39
+  jsr setup_status_bar
+
   ;set-up cave and variables
+  ldy #message_loading
+  jsr update_status_bar
   jsr load_cave_for_version
   jsr initialise_variables
   jsr populate_cave_from_loaded_data
@@ -693,14 +708,9 @@ play_one_life
   lda #>tile_map_row_1
   sta map_address_high
 
+  jsr set_cave_colours
   jsr draw_borders
   jsr initialise_stage
-  jsr set_cave_colours
-  jsr setup_status_bar
-  jsr update_cave_time
-  jsr update_player_score
-  ldy #message_clear
-  jsr update_status_bar
 
   ;dissolve screen when starting
   jsr prepare_reveal_hide_code
@@ -710,6 +720,12 @@ play_one_life
   ;for normal game play, nop out the logic applied above in draw grid (self-mod code)
   ldx #12
   jsr self_mod_code
+
+  jsr update_cave_time
+  jsr update_player_score
+  ldy #message_none
+  sty saved_message
+  jsr update_status_bar
 
   jsr gameplay_loop
 
@@ -726,7 +742,6 @@ not_game_over
   jsr prepare_reveal_hide_code
   lda #map_unprocessed
   jsr screen_dissolve_effect
-
   rts
 
 ; *************************************************************************************
@@ -742,15 +757,13 @@ initialise_variables
   sta sub_second_ticks
   lda #4
   sta delay_trying_to_push_rock
-  lda #$0d
+  lda #map_magic_wall
   sta magic_wall_state
   sta amoeba_growth_interval
-  lda #message_clear
-  sta saved_message
   lda #1
   sta amoeba_counter
-  sta message_timer
   lda #0
+  sta message_timer
   sta amoeba_replacement
   sta number_of_amoeba_cells_found
   sta current_rockford_sprite
@@ -759,7 +772,7 @@ initialise_variables
   sta cell_type_to_sprite  ;ensure space is the first sprite in table
   sta play_sound_fx
   sta play_ambient_sound_fx
-  sta random_seed
+  sta theme_note_duration
   rts
 
 ; *************************************************************************************
@@ -792,41 +805,41 @@ prepare_reveal_hide_code
 ; Performed in a loop using the game tick counter
 screen_dissolve_effect
   sta dissolve_to_solid_flag
-  lda #$21
+
+; use 'random' audio pitches to play while revealing/hiding the map
+  lda #random_sound
+  sta play_ambient_sound_fx
+
+  lda #33
   sta tick_counter
 screen_dissolve_loop
   jsr reveal_or_hide_more_cells
   jsr draw_grid_of_sprites
   dec tick_counter
   bpl screen_dissolve_loop
+
+  jsr ambient_note_end
   rts
 
 dissolve_to_solid_flag
-  !byte 0
-random_seed
   !byte 0
 
 ; *************************************************************************************
 ; Apply the tile show/hide routine for each game play tick
 reveal_or_hide_more_cells
-  ldy #<tile_map_row_1
+  ldy #<tile_map_row_0
   sty map_address_low
-  lda #>tile_map_row_1
+  lda #>tile_map_row_0
   sta map_address_high
 
-  ldx #21
-reveal_rows_loop
-  ldy #38
-reveal_cells_loop
-
-  ; slow it down!
-  stx temp1
-  sty temp2
-  ldx #$04
-  jsr delay_a_bit
-  ldx temp1
-  ldy temp2
-
+  ldx #22
+loop_over_rows
+  lda map_address_low
+  ; rows are stored in the first 40 bytes of every 64 bytes, so skip if we have
+  ; exceeded the right range
+  and #63
+  cmp #40
+  bpl skip_to_next_row
   ; progress a counter in a non-obvious pattern
   jsr get_next_random_byte
   ; if it's early in the process (tick counter is low), then branch more often so we
@@ -835,7 +848,7 @@ reveal_cells_loop
   lsr
   lsr
   cmp tick_counter
-  bcc skip_reveal_or_hide
+  bne skip_reveal_or_hide
   lda (map_address_low),y
   ; clear the top bit to reveal the cell...
   and #$7f
@@ -843,35 +856,32 @@ reveal_cells_loop
   ora dissolve_to_solid_flag
   sta (map_address_low),y
 skip_reveal_or_hide
-  dey
-  bne reveal_cells_loop
-  lda #$40
+  inc map_address_low
+  bne skip_increment
+  inc map_address_high
+skip_increment
+  clc
+  bcc loop_over_rows
+  ; move forward to next row. Each row is stored at 64 byte intervals. We have moved
+  ; on 40 so far so add the remainder to get to the next row
+skip_to_next_row
+  lda #64-40
   jsr add_a_to_ptr
   dex
-  bne reveal_rows_loop
-
-  ; create some 'random' audio pitches to play while revealing/hiding the map
-  jsr get_next_random_byte
-  ora #192
-  eor cave_number
-  and #248
-;TODO: add sounds
-;  sta sound_random+4
-  lda #random_sound
-  sta play_sound_fx
+  bne loop_over_rows
   rts
 
 ; *************************************************************************************
 ; A small 'pseudo-random' number routine. Generates a sequence of 256 numbers.
 get_next_random_byte
-  lda random_seed
+  lda #0
   asl
   asl
   asl
   asl
   sec
-  adc random_seed
-  sta random_seed
+  adc get_next_random_byte+1
+  sta get_next_random_byte+1
   rts
 
 ; *************************************************************************************
@@ -975,17 +985,18 @@ dont_allow_rock_push_up
   sta diamonds_required
   lda param_cave_time,x
   sta time_remaining
+
+  ;show or hide the bombs character depending on use in the cave
   lda param_bombs
   sta bomb_counter
-
-  ;cave letter and difficulty level on status bar
-  ldy cave_number
-  iny
-  sty status_bar_line+38
-  lda difficulty_level
-  clc
-  adc #48
-  sta status_bar_line+39
+  beq clear_bomb_on_status_bar
+  lda #245
+  sta status_bar_line+28
+  jmp update_status_bar_from_params
+clear_bomb_on_status_bar
+  lda #32
+  sta status_bar_line+28
+update_status_bar_from_params
 
   ;update diamonds required, bombs available, player lives on status bar
   jsr update_diamonds_required
@@ -1014,12 +1025,11 @@ skip_clearing_amoeba_replacement
 
   jsr update_map
   jsr update_cave_time
-  ldy #message_clear
-  jsr update_status_bar  ;time will always need updating, and sometimes the other values (updated for those events)
+  ldy #message_none
 
   ;update status message
   lda message_timer  ;check if a message should be displayed
-  beq skip_message_update
+  beq show_message_update
   dec message_timer
   ldy saved_message
   lda message_timer
@@ -1034,7 +1044,6 @@ skip_hurry_sound
   ldy #message_clear
 show_message_update
   jsr update_status_bar
-skip_message_update
 
   ; get the contents of the cell that rockford is influencing. This can be the cell
   ; underneath rockford, or by holding the RETURN key down and pressing a direction
@@ -1080,7 +1089,7 @@ hurry_up
   sta play_sound_fx
   lda #message_hurry_up
   sta saved_message
-  lda #$67
+  lda #103
   sta message_timer
 check_for_earth2
   lda neighbour_cell_contents
@@ -1089,8 +1098,7 @@ check_for_earth2
 
   ldx play_sound_fx
   cpx #rockford_move_sound
-  bcc keep_current_sound1  ;don't override a sound effect with got earth sound
-  ldx #got_earth_sound
+  bcc keep_current_sound1  ;don't override a sound effect with Rockford default movement sound
   stx play_sound_fx
 keep_current_sound1
 
@@ -1128,7 +1136,7 @@ end_update_bomb_delay
 end_update_gravity_timer
   ; update magic wall timer
   lda magic_wall_state
-  cmp #$1d
+  cmp #map_magic_wall | map_anim_state1  ;active
   bne update_death_explosion
   dec magic_wall_timer
 update_death_explosion
@@ -1166,14 +1174,13 @@ gameplay_loop_local
   jmp gameplay_loop
 
 lose_a_life
-;TODO: add sounds
-;  jsr note_clear
+  jsr note_clear
   lda cave_number
   cmp #16  ;don't lose a life on a bonus cave, just move to next cave instead
   bcs unsuccessful_bonus_cave
   dec player_lives
   jsr update_player_lives
-  ldy #message_clear
+  ldy #message_none
   jsr update_status_bar
   rts
 unsuccessful_bonus_cave
@@ -1208,10 +1215,8 @@ skip_showing_players_and_men
 update_while_finally_pressing_unpause_loop
   jsr check_for_pause_key
   bne update_while_finally_pressing_unpause_loop
-  lda #message_clear
+  lda #message_none
   sta saved_message
-  lda #1
-  sta message_timer
   rts
 
 pause_counter
@@ -1256,16 +1261,17 @@ rockford_reached_end_position
   ;update message bar
   lda #message_bonus_life
   sta saved_message
-  lda #$27
+  lda #39
   sta message_timer
 
 not_a_bonus_end
   jsr draw_grid_of_sprites
   lda time_remaining
   beq skip_bonus
-count_up_bonus_at_end_of_stage_loop
+
   lda #exit_cave_sound
-  sta play_sound_fx
+  sta play_ambient_sound_fx
+count_up_bonus_at_end_of_stage_loop
 
   ;countdown the remaining time and add to score
   dec time_remaining
@@ -1275,7 +1281,7 @@ count_up_bonus_at_end_of_stage_loop
   lda #1
   jsr update_score
   jsr update_player_score
-  ldy #message_clear
+  ldy #message_none
   jsr update_status_bar
 
   jsr draw_grid_of_sprites
@@ -1283,10 +1289,11 @@ count_up_bonus_at_end_of_stage_loop
   lda time_remaining
   bne count_up_bonus_at_end_of_stage_loop
 skip_bonus
+  jsr ambient_note_end
 
   ;Determine next cave and level to play
   jsr calculate_next_cave_number_and_level
-  ldy #message_clear
+  ldy #message_none
 
 update_during_pause_or_out_of_time
   sty save_message_number
@@ -1331,7 +1338,7 @@ update_diamonds_required_and_check_got_all
   ; got all the diamonds
   lda #message_got_all_diamonds
   sta saved_message
-  lda #$27
+  lda #39
   sta message_timer
 
   ; open the exit
@@ -1411,6 +1418,62 @@ add_a_to_ptr
   bcc add_ptr_return
   inc map_address_high
 add_ptr_return
+  rts
+
+; ****************************************************************************************************
+delay_a_bit_longer
+
+delay_long
+  jsr delay_a_bit
+  dec temp1
+  bne delay_long
+  rts
+
+; ****************************************************************************************************
+delay_a_bit
+delay1
+  ldy $ff
+delay2
+  dey
+  bne delay2
+  dex
+  bne delay1
+  rts
+
+; *************************************************************************************
+; Map address (which starts at $3000) becomes row/column in map_rows/cols
+; e.g. $3000 is 0,0   $3098 is 2,24   $3140 is 5,0   $310f is 5,15
+map_address_to_map_xy_position
+
+  lda map_address_high
+  and #7
+  sta map_rows
+  lda map_address_low
+  asl
+  rol map_rows
+  asl
+  rol map_rows
+  lda map_address_low
+  and #$3f
+  sta map_cols
+  rts
+
+; *************************************************************************************
+; Convert a grid position (row/column) to a map address
+map_xy_position_to_map_address
+
+  lda #0
+  sta map_address_low
+  lda map_rows
+  lsr
+  ror map_address_low
+  lsr
+  ror map_address_low
+  ora #>tile_map_row_0
+  sta map_address_high
+  lda map_cols
+  ora map_address_low
+  sta map_address_low
   rts
 
 ; *************************************************************************************
@@ -1660,13 +1723,13 @@ update_map_scroll_position
   sec
   sbc visible_top_left_map_x  ;subtract visible top left x from calculated column position, result in A
   ldx visible_top_left_map_x
-  cmp #14  ;how many tiles are visible on the left, going right
+  cmp #16  ;how many tiles are visible on the left, going right
   bmi check_for_need_to_scroll_left
-  cpx #21  ;how many tiles are visible on the left, going right to stop going right
+  cpx #20  ;how many tiles are visible on the left, going right to stop going right
   bpl check_for_need_to_scroll_down
   inx
 check_for_need_to_scroll_left
-  cmp #5  ;how many tiles are visible on the left, going left
+  cmp #4  ;how many tiles are visible on the left, going left
   bpl check_for_need_to_scroll_down
   cpx #1  ;how many tiles are visible on the left, going left to stop going left
   bmi check_for_need_to_scroll_down
@@ -1702,56 +1765,13 @@ skip_bonus_stage
   rts
 
 ; *************************************************************************************
-; Map address (which starts at $2000) becomes row/column in map_rows/cols
-; e.g. $2000 is 0,0   $2098 is 2,24   $2140 is 5,0   $210f is 5,15
-map_address_to_map_xy_position
-
-  lda map_address_high
-  and #7
-  sta map_rows
-  lda map_address_low
-  asl
-  rol map_rows
-  asl
-  rol map_rows
-  lda map_address_low
-  and #$3f
-  sta map_cols
-  rts
-
-; *************************************************************************************
-; Convert a grid position (row/column) to a map address
-map_xy_position_to_map_address
-
-  lda #0
-  sta map_address_low
-  lda map_rows
-  lsr
-  ror map_address_low
-  lsr
-  ror map_address_low
-  ora #>tile_map_row_0
-  sta map_address_high
-  lda map_cols
-  ora map_address_low
-  sta map_address_low
-  rts
-
-; *************************************************************************************
 ; Update the gameplay map with action handlers for each of the game actors
 ; Includes logic for falling rocks, diamonds, bombs
 update_map
 
   ; Slow it down a bit
-slow_down_setting
-;TODO: NTSC
-;  ldx #$ff  ;for PAL, is changed for NTSC
-;  jsr delay_a_bit
-  lda #15
-  sta temp1
-  ldx #$ff
-  jsr delay_a_bit_longer
-;
+  ldx #$af
+  jsr delay_a_bit
 
   lda #20  ; twenty rows
   sta map_rows
@@ -1923,7 +1943,7 @@ check_if_cell_right_is_empty
   ; (so it won't be moved again). Then store it in the below left or below right cell
 rock_or_diamond_can_fall_left_or_right
   txa
-  ora #$40
+  ora #map_anim_state4
   sta (map_address_low),y
 set_to_unprocessed_space
   ldx #$80
@@ -1933,7 +1953,7 @@ set_to_unprocessed_space
   ; (so it won't be moved again). Then store it in the cell below.
 cell_below_is_a_space
   txa
-  ora #$40
+  ora #map_anim_state4
   sta (map_address_low),y
   bne set_to_unprocessed_space  ; ALWAYS branch
 
@@ -2179,31 +2199,29 @@ handler_magic_wall
   ldy #map_unprocessed | map_space
   sty cell_above
 skip_storing_space_above
-  cpx #$2d
+  cpx #map_magic_wall | map_anim_state2  ;inactive
   beq store_magic_wall_state
   ; if the cell below isn't empty, then don't store the item below
   ldy cell_below
   bne magic_wall_is_active
   ; store the item that has fallen through the wall below
+  ora #map_anim_state4  ; mark the rock / diamond / bomb as fallen
   sta cell_below
 magic_wall_is_active
   lda #magic_wall_sound
   sta play_ambient_sound_fx
-  ldx #$1d
+  ldx #map_magic_wall | map_anim_state1  ;active
   ldy magic_wall_timer
   bne store_magic_wall_state
   ; magic wall becomes inactive once the timer has run out
-  lda #no_sound
-  sta play_ambient_sound_fx
-;TODO: add sounds
-;  jsr note_clear
-  ldx #$2d
+  jsr ambient_note_end
+  ldx #map_magic_wall | map_anim_state2  ;inactive
 store_magic_wall_state
   stx magic_wall_state
   rts
 
 check_if_magic_wall_is_active
-  cpx #$1d
+  cpx #map_magic_wall | map_anim_state1  ;active
   beq magic_wall_is_active
   rts
 
@@ -2295,10 +2313,7 @@ found_amoeba
   ldx #map_unprocessed | map_rock
 amoeba_replacement_found
   stx amoeba_replacement
-  lda #no_sound
-  sta play_ambient_sound_fx
-;TODO: add sounds
-;  jsr note_clear
+  jsr ambient_note_end
 check_for_amoeba_timeout
   lda time_remaining
   cmp #50
@@ -2323,10 +2338,10 @@ handler_slime
   and #$0f
   tay
   lda items_allowed_through_slime,y  ; read which cell types are allowed to fall through
-  beq slime_return                   ; If not the right type (rock or diamond) then end
+  beq slime_return                   ; If not the right type (rock / diamond / bomb) then end
   sta item_allowed
   lda cell_below
-  bne slime_return                   ; If no space below the slime for a rock or diamond to fall then end
+  bne slime_return                   ; If no space below the slime for a rock / diamond / bomb to fall then end
   lda param_slime_permeability
   beq slime_pass_through             ; If slime permeability is zero, no delay in pass through
   lda #0                             ; Otherwise continue and determine random delay
@@ -2345,6 +2360,7 @@ slime_pass_through
   lda #map_unprocessed | map_space   ; something will fall into the wall, clear the cell above
   sta cell_above
   lda item_allowed
+  ora #map_anim_state4               ; mark the rock / diamond / bomb as fallen
   sta cell_below                     ; store the item that has fallen through the wall below
 slime_return
   rts
@@ -2589,19 +2605,12 @@ create_a_bomb
   bne skip_no_bombs_message
   lda #message_no_bombs_left
   sta saved_message
-  lda #$27
+  lda #39
   sta message_timer
 skip_no_bombs_message
   ;update bombs available on status bar
   jsr update_bombs_available
   lda #map_bomb
-  rts
-
-direction_key_table
-  !byte KEY_MASK_RIGHT
-  !byte KEY_MASK_LEFT
-  !byte KEY_MASK_UP
-  !byte KEY_MASK_DOWN
   rts
 
 ; *************************************************************************************
@@ -2642,10 +2651,10 @@ status_bar_setup_loop
   sta _COLOUR_SCREEN_ADDR
   lda #115  ;time, light cyan
   sta _COLOUR_SCREEN_ADDR+5
-  lda #118  ;bomb, light blue
-  sta _COLOUR_SCREEN_ADDR+24
   lda #82  ;life, medium red
-  sta _COLOUR_SCREEN_ADDR+29
+  sta _COLOUR_SCREEN_ADDR+24
+  lda #118  ;bomb, light blue
+  sta _COLOUR_SCREEN_ADDR+27
   rts
 
 ; *************************************************************************************
@@ -2653,45 +2662,55 @@ status_bar_setup_loop
 ; and apply the status message if set
 update_status_bar
 
-  cpy #message_clear
-  beq no_message
+  ;draw first part of the status bar which doesn't change
   ldx #24
-  jmp status_bar_loop
-
-no_message
-  ;restore the colours for the bomb and life special characters
-  lda #118  ;bomb, light blue
-  sta _COLOUR_SCREEN_ADDR+24
-  lda #82  ;life, medium red
-  sta _COLOUR_SCREEN_ADDR+29
-
-  ldx #40
-status_bar_loop
+status_bar_loop_1
   dex
   lda status_bar_line,x
   sta _SCREEN_ADDR,x
   cpx #0
-  bne status_bar_loop
+  bne status_bar_loop_1
 
-  cpy #message_clear
-  beq update_status_bar_end
+  ;set the colours for the bomb and life special characters
+  lda #82  ;life, medium red
+  sta _COLOUR_SCREEN_ADDR+24
+  lda #118  ;bomb, light blue
+  sta _COLOUR_SCREEN_ADDR+27
+
+  cpy #message_none
+  beq skip_clear_status_colours
 
   ;for the message, clear the colours for the bomb and life special characters
   lda #113  ;numbers etc, white
   sta _COLOUR_SCREEN_ADDR+24
-  sta _COLOUR_SCREEN_ADDR+29
+  sta _COLOUR_SCREEN_ADDR+27
 
-  ;display the message text
-  ldx #0
-status_message_loop
-  lda status_messages,y
-  iny
+skip_clear_status_colours
+
+  ;draw second part of the status bar which may be replaced with a message
+  ldx #16
+status_bar_loop_2
+  dex
+  lda status_bar_line+24,x
+  sta draw_status_bar_char+1  ;self-mod, set standard status bar character
+
+  cpy #message_none
+  beq draw_status_bar_char
+  lda status_messages-1,y
+  dey
+  sta draw_status_bar_char+1  ;self-mod, set status bar character to message
+  jmp draw_status_bar_char
+
+draw_status_bar_space
+  lda #32
+  sta draw_status_bar_char+1  ;self-mod, set status bar character to space
+
+draw_status_bar_char
+  lda #32
   sta _SCREEN_ADDR+24,x
-  inx
-  cpx #16
-  bne status_message_loop
+  cpx #0
+  bne status_bar_loop_2
 
-update_status_bar_end
   rts
 
 ; *************************************************************************************
@@ -2742,7 +2761,7 @@ award_bonus_life
   ;update message bar
   lda #message_bonus_life
   sta saved_message
-  lda #$27
+  lda #39
   sta message_timer
 
 score_return
@@ -2790,16 +2809,21 @@ update_diamonds_required
 
 ; *************************************************************************************
 update_bombs_available
+
+  lda param_bombs
+  beq cave_has_no_bombs
+
   jsr clear_output8
   lda bomb_counter
   jsr single_byte_to_ASCII
 
   lda output8
-  sta status_bar_line+25
+  sta status_bar_line+29
   lda output8+1
-  sta status_bar_line+26
+  sta status_bar_line+30
   lda output8+2
-  sta status_bar_line+27
+  sta status_bar_line+31
+cave_has_no_bombs
   rts
 
 ; *************************************************************************************
@@ -2825,9 +2849,9 @@ update_player_lives
   jsr single_byte_to_ASCII
 
   lda output8
-  sta status_bar_line+30
+  sta status_bar_line+25
   lda output8+1
-  sta status_bar_line+31
+  sta status_bar_line+26
   ;output8+2 (100+ lives deliverately not set)
   rts
 
@@ -2949,26 +2973,6 @@ wip_int
   !byte 0,0
 
 ; ****************************************************************************************************
-delay_a_bit_longer
-
-delay_long
-  jsr delay_a_bit
-  dec temp1
-  bne delay_long
-  rts
-
-; ****************************************************************************************************
-delay_a_bit
-delay1
-  ldy $ff
-delay2
-  dey
-  bne delay2
-  dex
-  bne delay1
-  rts
-
-; ****************************************************************************************************
 ; Populate the cave with tiles using the pseudo-random method
 ;   Tiles are applied to the map if the tile already there is a 'null' tile (from populate_cave_from_loaded_data)
 ;   These tiles may be the cave default (often dirt) or a tile determined in a pseudo-random fashion
@@ -3076,6 +3080,8 @@ load_cave_for_version
 
   ;Set cave letter to load
   lda cave_number
+  cmp load_cave_number_stored        ; Check if the cave is already stored
+  beq cave_already_loaded            ; Skip if already loaded
   clc
   adc #65
   sta name_of_cave+4
@@ -3084,22 +3090,31 @@ load_cave_for_version
   lda #$01  ;1 is logical file number
   ldx #$08  ;8 is device number (disk)
   ldy #$01  ;1 means use secondary address (load into memory location set in PRG first 2 bytes)
-  jsr $ffba  ;Kernal: SETLFS, set logical first and second addresses
+  jsr _KERNAL_SETLFS  ;Kernal: SETLFS, set logical first and second addresses
 
   ;SETNAM
   ldx #<name_of_cave
   ldy #>name_of_cave
   lda #5  ;number of characters in filename (e.g. BD1-A for Boulder Dash version 1, cave A)
-  jsr $ffbd  ;Kernal: SETNAM, set filename
+  jsr _KERNAL_SETNAM  ;Kernal: SETNAM, set filename
 
   ;LOADSP
   lda #$00  ;0 set operation to be load (not verify)
-  jsr $ffd5  ;Kernal: LOAD, load into memory from device
+  jsr _KERNAL_LOADSP  ;Kernal: LOADSP, load into memory from device
+
+  lda cave_number
+  sta load_cave_number_stored
+
+cave_already_loaded
   rts
 
 ;Version prefix populated in version selection
 name_of_cave
   !scr "BD1-A"
+
+;Initially cave $ff isn't a valid cave, so will always loads cave A
+load_cave_number_stored
+    !byte $ff                          
 
 ; *************************************************************************************
 ; Copy a number of bytes (in copy size variable) from source to target memory locations
@@ -3183,25 +3198,25 @@ big_rockford_instructions
   !fill 12, " "
   !scr "diamonds needed to complete "
 
-  !byte 32,32,214,215,216,217,32,32,32,32,32,32
+  !byte 32,32,209,210,211,212,32,32,32,32,32,32
   !scr "each cave and reach the     "
 
-  !byte 32,32,218,219,213,220,221,32,32,32,32,32
+  !byte 32,32,213,214,79,215,216,32,32,32,32,32
   !scr "exit before time runs out   "
 
-  !byte 32,32,222,223,224,225,226,32,227,32,32,32
+  !byte 32,32,217,218,219,220,221,32,222,32,32,32
   !fill 28, " "
   
-  !byte 32,32,228,229,230,231,232,233,234,235,32,32
+  !byte 32,32,223,224,225,226,227,228,229,230,32,32
   !scr "use joystick 1 to move      "
 
-  !byte 32,32,236,237,238,239,240,241,234,241,32,32
+  !byte 32,32,231,232,233,234,235,236,229,236,32,32
   !scr "fire + direction clears     "
 
-  !byte 32,32,242,243,32,244,245,246,234,247,32,32
+  !byte 32,32,237,238,32,239,240,241,229,242,32,32
   !scr "space, pushes rocks, grabs  "
 
-  !byte 32,32,32,32,32,32,32,32,248,32,32,32
+  !byte 32,32,32,32,32,32,32,32,243,32,32,32
   !scr "diamonds or plants bombs    "
 
   !fill 40, " "
@@ -3216,5 +3231,132 @@ big_rockford_instructions
 
   !fill 12, " "
   !scr "select version              "
+
+
+; *************************************************************************************
+; sound effects
+;  volume + voice-select byte, noise or voice 2 word, voice1 word
+;  if volume + voice-select is zero, deactivate sound fx
+;
+;  volume + voice-select for _VOLUME_SELECT: 
+;    bits 0-3 = volume (values 0 to 15)
+;    bit 4 = voice 1 on / off (1 / 0)
+;    bit 5 = voice 2 on / off (1 / 0)
+;    bit 6 = noise on / off (1 / 0). Uses voice 2 which must be off
+;    bit 7 = sound on / off (0 / 1)
+voice_1 = 16
+voice_2 = 32
+voice_noise = 64  ;noise on voice 2
+
+!align 255, 0
+list_of_sounds
+active_sound_offset
+  !byte 0
+
+sound_fx_rockford_move
+  !byte (3+voice_noise)
+  !word $0373,0
+  !byte (4+voice_noise)
+  !word $0363,0
+  !byte 0  ;terminator 0
+sound_fx_rock_move
+  !byte (15+voice_noise)
+  !word $010d,0
+  !byte (13+voice_noise)
+  !word $010c,0
+  !byte (11+voice_noise)
+  !word $010a,0
+  !byte 0  ;terminator 0
+sound_fx_enter_cave
+  !byte (15+voice_noise)
+  !word $03ff,0
+  !byte (15+voice_noise)
+  !word $03ef,0
+  !byte (15+voice_noise)
+  !word $03df,0
+  !byte 0  ;terminator 0
+sound_fx_explosion
+  !byte (15+voice_noise)
+  !word $03ff,0
+  !byte (15+voice_noise)
+  !word $03ef,0
+  !byte (15+voice_noise)
+  !word $03df,0
+  !byte (12+voice_noise)
+  !word $037f,0
+  !byte 0  ;terminator 0
+sound_fx_got_diamond
+  !byte (9+voice_1)
+  !word 0,$0338
+  !byte (6+voice_1)
+  !word 0,$034e
+  !byte (3+voice_1)
+  !word 0,$0373
+  !byte 0  ;terminator 0
+sound_fx_diamond_move
+  !byte (15+voice_1)
+  !word 0,$0373
+  !byte (12+voice_1)
+  !word 0,$0376
+  !byte (9+voice_1)
+  !word 0,$0372
+  !byte 0  ;terminator 0
+sound_fx_got_all_diamonds
+  !byte (15+voice_1)
+  !word 0,$02c3
+  !byte (12+voice_1)
+  !word 0,$0338
+  !byte (9+voice_1)
+  !word 0,$036a
+  !byte (6+voice_1)
+  !word 0,$0373
+  !byte 0  ;terminator 0
+sound_fx_exit_cave
+  !byte (3+voice_1)
+  !word 0,$03b5
+  !byte (2+voice_1)
+  !word 0,$03b2
+  !byte (1+voice_1)
+  !word 0,$03af
+  !byte 0  ;terminator 0
+sound_amoeba_magic_wall
+  !byte (3+voice_1)
+  !word 0,$0200
+  !byte (2+voice_1)
+  !word 0,$0200
+  !byte (1+voice_1)
+  !word 0,$0200
+  !byte 0  ;terminator 0
+sound_random
+  !byte (8+voice_1)
+  !word 0,$0300
+  !byte (7+voice_1)
+  !word 0,$0300
+  !byte (6+voice_1)
+  !word 0,$0300
+  !byte 0  ;terminator 0
+
+; *************************************************************************************
+; title theme tune
+;
+theme_voice_1
+  !word $02C3, $0304, $032C, $0361, $02E5, $0312, $032C, $0373, $0338, $034E, $0361, $037B, $034E, $03A2, $0358, $0396
+  !word $02C3, $0361, $0258, $02E5, $029C, $0373, $02E5, $029C, $02C3, $0361, $0258, $02E5, $0338, $03B1, $0361, $0338
+  !word $029C, $034E, $0224, $02C3, $0320, $03A7, $034E, $0320, $0258, $0358, $0286, $0361, $0312, $0312, $0389, $0312
+  !word $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361
+  !word $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $034E, $034E, $034E, $034E
+  !word $0361, $03B1, $0361, $03A7, $0361, $03A2, $0361, $0396, $034E, $03A7, $034E, $03A7, $034E, $0389, $034E, $03A7
+  !word $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $034E, $034E, $034E, $034E
+  !word $0382, $0361, $032C, $0304, $0373, $034E, $0312, $029C, $0382, $0361, $032C, $0304, $0373, $034E, $0312, $029C
+
+theme_voice_2
+  !word $0185, $0258, $02C3, $02F5, $0137, $0286, $029C, $0312, $00E0, $00E0, $0270, $00E0, $029C, $0389, $02B0, $037B
+  !word $0185, $0185, $0185, $0185, $0137, $0137, $0137, $0137, $0185, $0185, $0185, $0185, $0270, $0270, $0270, $0270
+  !word $0137, $0137, $0137, $0137, $023F, $023F, $023F, $023F, $00B1, $032C, $00B1, $032C, $0049, $0049, $0185, $0185
+  !word $0185, $0185, $0185, $0185, $02C3, $02C3, $0185, $0185, $0137, $0137, $0137, $0137, $029C, $029C, $0137, $0137
+  !word $0185, $0382, $0185, $0389, $02C3, $0382, $0185, $0389, $0137, $0382, $0137, $0389, $029C, $0373, $0137, $037B
+  !word $0185, $0185, $0185, $0396, $02C3, $02C3, $0185, $037B, $0137, $0137, $0137, $0137, $029C, $029C, $0137, $0137
+  !word $0185, $0382, $0185, $0389, $02C3, $0382, $0185, $0389, $0137, $0382, $0137, $0389, $029C, $0373, $0137, $037B
+  !word $0361, $032C, $0304, $02C3, $034E, $0312, $02E5, $0137, $0396, $0382, $0361, $032C, $0312, $02E5, $029C, $0137
 
 end_of_game
