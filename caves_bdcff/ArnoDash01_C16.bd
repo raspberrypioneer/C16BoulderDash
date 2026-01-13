@@ -657,20 +657,20 @@ Colors=Red Green Lt.Orange
 [map]
 WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW
 xcq               cqw                  w
-xq       x         cw                  w
+xq                 cw                  w
+x                   w                  w
+x        x          w                  w
 x       xPx         w                  W
 x     xxxxxxxx      w                  W
-x                   w                  w
 x  WWW    W    WWW  w                  w
 x W   W  WW   W     w                  w
 x W       W   WWWW  w                  w
 x W   W   W   W   W w                  w
 x  WWW   WWW   WWW  w                  w
+x                   w                  w
 xc                 qw                  w
 xqc               qcw                  w
 wwwwwwwwwwwwwwwwwwwwwX                 w
-w                                      w
-w                                      w
 w                                      w
 w                                      w
 w                                      w
