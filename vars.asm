@@ -311,6 +311,7 @@ slime_animated_sprite0
   !byte sprite_amoeba1                                                                ; cell type $09 = map_slime
   !byte $4c                                                                           ; cell type $0A = map_explosion
   !byte sprite_bomb1                                                                  ; cell type $0B = map_bomb
+growing_wall_sprite
   !byte sprite_wall1                                                                  ; cell type $0C = map_growing_wall
   !byte sprite_wall2                                                                  ; cell type $0D = map_magic_wall
   !byte sprite_butterfly1                                                             ; cell type $0E = map_butterfly
@@ -793,8 +794,6 @@ level_selection_cycle_down
 ; self-mod code table
 ;
 self_mod_code_table
-  ;used to check growing wall tile: cmp #map_growing_wall, beq skip_null_tile, nop; nop 
-  !byte $c9, map_growing_wall, $f0, 0, $ea, $ea
   ;used to reveal-hide_tiles: cmp #map_unprocessed, bcc not_titanium, lda #map_titanium_wall
   !byte $c9, map_unprocessed, $90, 0, $a9, map_titanium_wall
   ;used to nop out the above

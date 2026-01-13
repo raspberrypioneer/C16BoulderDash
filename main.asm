@@ -502,12 +502,6 @@ intro_and_cave_select
   jsr load_cave_for_version
   jsr prepare_cave
 
-  ;set the tile check logic in draw grid (self-mod code)
-  ldx #0
-  jsr self_mod_code
-  lda #skip_null_tile-(skip_tile_check+4)  ;branch forward to skip_null_tile (+4 bytes for cmp,#,beq,#)
-  sta skip_tile_check+3
-
   ;knock-out Rockford and growing wall handlers for now
   ;growing wall is ignored on the intro screen, so that the title text isn't removed when drawing the map
   lda #<handler_null
@@ -597,10 +591,6 @@ exit_intro_keypress
   lda #>update_sounds
   sta interrupt_sound+2
 
-  ;nop out the tile check logic in draw grid (self-mod code)
-  ldx #12
-  jsr self_mod_code
-
   ;add back Rockford and growing wall handlers
   lda #<handler_rockford
   sta rockford_handler_low
@@ -610,12 +600,6 @@ exit_intro_keypress
   sta growing_wall_handler_low
   lda #>handler_growing_wall
   sta growing_wall_handler_high
-
-  ;un-dissolve screen when ending
-  jsr prepare_reveal_hide_code
-  lda #map_unprocessed
-  sta dissolve_to_solid_flag+1
-
   rts
 
 cave_down
@@ -676,12 +660,16 @@ game_title_loop
 ; Game action starts here, playing one of Rockford's lives
 play_one_life
 
-  ;load cave (dissolve runs at the same time in interrupt)
   ldy #message_loading
   jsr update_status_bar
-  jsr load_cave_for_version
 
-  ;wait for dissolve to complete (dissolve runs in interrupt)
+  ;end last screen by hiding it with steel sprites via interrupt
+  jsr prepare_reveal_hide_code
+  lda #map_unprocessed
+  sta dissolve_to_solid_flag+1  ;this causes the interrupt to run screen_dissolve_effect
+  jsr load_cave_for_version  ;load cave (dissolve runs at the same time in interrupt)
+
+  ;wait for dissolve to complete via interrupt
 wait_for_dissolve_to_end
   nop
   lda dissolve_to_solid_flag+1
@@ -701,10 +689,6 @@ wait_for_dissolve_to_end
   jsr update_status_bar
   jsr prepare_cave
 
-  ;for normal game play, nop out the logic applied above in draw grid (self-mod code)
-  ldx #12
-  jsr self_mod_code
-
   jsr update_cave_time
   jsr update_player_score
   ldy #message_none
@@ -721,11 +705,6 @@ wait_for_dissolve_to_end
   jsr update_status_bar
 
 not_game_over
-
-  ;un-dissolve screen when ending
-  jsr prepare_reveal_hide_code
-  lda #map_unprocessed
-  sta dissolve_to_solid_flag+1  ;this causes the interrupt to run screen_dissolve_effect
   rts
 
 ; *************************************************************************************
@@ -743,10 +722,14 @@ prepare_cave
   sta visible_top_left_map_y
   jsr set_rockford_start
   jsr _CLEAR_SCREEN
+  lda #sprite_space
+  sta growing_wall_sprite
   jmp continue_prepare_cave
 prepare_standard_cave
   jsr populate_cave_tiles_pseudo_random
   jsr initialise_stage
+  lda #sprite_wall1
+  sta growing_wall_sprite
 continue_prepare_cave
 
   ;initialise cave for game
@@ -821,7 +804,7 @@ self_mod_code_loop
 ; Self-mod code applied to draw_grid_of_sprites routine to reveal-hide tiles used in cave open/close
 prepare_reveal_hide_code
   ;add a check for unprocessed cells and set to titanium tile in draw grid (self-mod code)
-  ldx #6
+  ldx #0
   jsr self_mod_code
   lda #not_titanium-(skip_tile_check+4)  ;branch forward to not_titanium (+4 bytes for cmp,#,bcc,#)
   sta skip_tile_check+3
@@ -852,6 +835,10 @@ screen_dissolve_loop
   ; reset dissolve_to_solid_flag which stops interrupt running this routine
   lda #map_space
   sta dissolve_to_solid_flag+1
+
+  ;for normal game play, nop out the logic applied above in draw grid (self-mod code)
+  ldx #6
+  jsr self_mod_code
   rts
 
 ; *************************************************************************************
