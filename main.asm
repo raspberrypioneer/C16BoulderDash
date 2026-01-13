@@ -203,6 +203,9 @@ colour_addr2_high = $47
 map_address_low = $21
 map_address_high = $22
 
+cache_temp1 = $27
+cache_temp2 = $28
+
 map_cols = $0b
 map_rows = $0c
 
@@ -497,23 +500,7 @@ intro_and_cave_select
 
   ;set-up cave and variables
   jsr load_cave_for_version
-  jsr initialise_variables
-  jsr _CLEAR_SCREEN
-  jsr populate_cave_from_loaded_data
-
-  ;set visible map and Rockford position for drawing grid
-  lda #0
-  sta visible_top_left_map_x
-  sta visible_top_left_map_y
-  jsr set_rockford_start
-
-  ;set start of map
-  lda #<tile_map_row_1
-  sta map_address_low
-  lda #>tile_map_row_1
-  sta map_address_high
-  jsr draw_borders
-  jsr set_cave_colours
+  jsr prepare_cave
 
   ;set the tile check logic in draw grid (self-mod code)
   ldx #0
@@ -624,6 +611,11 @@ exit_intro_keypress
   lda #>handler_growing_wall
   sta growing_wall_handler_high
 
+  ;un-dissolve screen when ending
+  jsr prepare_reveal_hide_code
+  lda #map_unprocessed
+  sta dissolve_to_solid_flag+1
+
   rts
 
 cave_down
@@ -684,6 +676,17 @@ game_title_loop
 ; Game action starts here, playing one of Rockford's lives
 play_one_life
 
+  ;load cave (dissolve runs at the same time in interrupt)
+  ldy #message_loading
+  jsr update_status_bar
+  jsr load_cave_for_version
+
+  ;wait for dissolve to complete (dissolve runs in interrupt)
+wait_for_dissolve_to_end
+  nop
+  lda dissolve_to_solid_flag+1
+  bne wait_for_dissolve_to_end
+
   ;cave letter and difficulty level on status bar
   ldy cave_number
   iny
@@ -692,30 +695,11 @@ play_one_life
   clc
   adc #48
   sta status_bar_line+39
-  jsr setup_status_bar
 
   ;set-up cave and variables
-  ldy #message_loading
+  ldy #message_none
   jsr update_status_bar
-  jsr load_cave_for_version
-  jsr initialise_variables
-  jsr populate_cave_from_loaded_data
-  jsr populate_cave_tiles_pseudo_random
-
-  ;set start of map
-  lda #<tile_map_row_1
-  sta map_address_low
-  lda #>tile_map_row_1
-  sta map_address_high
-
-  jsr set_cave_colours
-  jsr draw_borders
-  jsr initialise_stage
-
-  ;dissolve screen when starting
-  jsr prepare_reveal_hide_code
-  lda #map_space
-  jsr screen_dissolve_effect
+  jsr prepare_cave
 
   ;for normal game play, nop out the logic applied above in draw grid (self-mod code)
   ldx #12
@@ -741,8 +725,51 @@ not_game_over
   ;un-dissolve screen when ending
   jsr prepare_reveal_hide_code
   lda #map_unprocessed
+  sta dissolve_to_solid_flag+1  ;this causes the interrupt to run screen_dissolve_effect
+  rts
+
+; *************************************************************************************
+prepare_cave
+
+  jsr initialise_variables
+  jsr populate_cave_from_loaded_data
+
+  lda cave_number
+  cmp #25  ;Cave Z (intro cave)
+  bne prepare_standard_cave
+  ;set visible map and Rockford position for drawing grid
+  lda #0
+  sta visible_top_left_map_x
+  sta visible_top_left_map_y
+  jsr set_rockford_start
+  jsr _CLEAR_SCREEN
+  jmp continue_prepare_cave
+prepare_standard_cave
+  jsr populate_cave_tiles_pseudo_random
+  jsr initialise_stage
+continue_prepare_cave
+
+  ;initialise cave for game
+  jsr set_cave_colours
+  jsr draw_borders
+  jsr reset_grid_of_sprites
+
+  ;dissolve screen when starting
+  jsr prepare_reveal_hide_code
+  lda #map_space
+  sta dissolve_to_solid_flag+1
   jsr screen_dissolve_effect
   rts
+
+; *************************************************************************************
+reset_grid_of_sprites
+    ldx #$fd
+    lda #$ff
+reset_grid_of_sprites_loop
+    dex
+    sta screen_cache_map,x
+    bne reset_grid_of_sprites_loop
+    rts
 
 ; *************************************************************************************
 initialise_variables
@@ -802,11 +829,13 @@ prepare_reveal_hide_code
 
 ; *************************************************************************************
 ; Apply the cave open/close tiles which show/hide the tiles on screen
+; Called in game play to reveal a cave and via interrupt when cave is being hidden,
+; which is also when a cave is loaded (hence the interrupt approach)
 ; Performed in a loop using the game tick counter
 screen_dissolve_effect
-  sta dissolve_to_solid_flag
 
-; use 'random' audio pitches to play while revealing/hiding the map
+  ; use 'random' audio pitches to play while revealing the map
+  ; although set below, sound does not play when loading, reason unclear
   lda #random_sound
   sta play_ambient_sound_fx
 
@@ -819,10 +848,11 @@ screen_dissolve_loop
   bpl screen_dissolve_loop
 
   jsr ambient_note_end
-  rts
 
-dissolve_to_solid_flag
-  !byte 0
+  ; reset dissolve_to_solid_flag which stops interrupt running this routine
+  lda #map_space
+  sta dissolve_to_solid_flag+1
+  rts
 
 ; *************************************************************************************
 ; Apply the tile show/hide routine for each game play tick
@@ -853,7 +883,8 @@ loop_over_rows
   ; clear the top bit to reveal the cell...
   and #$7f
   ; ...or set the top bit to hide the cell
-  ora dissolve_to_solid_flag
+dissolve_to_solid_flag
+  ora #map_space  ;self-mod map_space or map_unprocessed
   sta (map_address_low),y
 skip_reveal_or_hide
   inc map_address_low
@@ -887,6 +918,12 @@ get_next_random_byte
 ; *************************************************************************************
 ; Loop over all rows, plotting side borders from the cave file
 draw_borders
+
+  ;set start of map
+  lda #<tile_map_row_1
+  sta map_address_low
+  lda #>tile_map_row_1
+  sta map_address_high
 
   ldx #21
 write_left_and_right_borders_loop
@@ -1500,6 +1537,7 @@ draw_grid_of_sprites
 
   lda #0  ;skip status bar
   sta map_rows  ;grid row counter
+  sta cache_temp2
 loop_plot_row
   tay
 
@@ -1543,7 +1581,19 @@ not_titanium
 
   tay
   lda cell_type_to_sprite,y
+
+  ;Check if the sprite on screen (in the cache) is the same one as the map
+  sta sprite_in_cache+1
   tay
+  sty cache_temp1
+  ldy cache_temp2
+  lda screen_cache_map,y
+sprite_in_cache
+  cmp #0
+  beq skip_null_tile  ;Sprite is the same, don't need to redraw it
+  lda sprite_in_cache+1
+  sta screen_cache_map,y
+  ldy cache_temp1
 
   ;Lookup sprite high/low address in the sprite list table
   lda sprite_addresses_low,y
@@ -1596,6 +1646,7 @@ foreground_colourB
   sta (colour_addr2_low),y
 
 skip_null_tile
+  inc cache_temp2
   inc map_cols  ;grid column counter
   lda map_cols  ;grid column counter
   cmp #20  ;20 columns
@@ -2632,32 +2683,6 @@ store_cave_number_and_difficulty_level
   rts
 
 ; *************************************************************************************
-; Setup the status bar with colours
-setup_status_bar
-
-  ;Draw status bar
-  ldy #40
-status_bar_setup_loop
-  dey
-  lda status_bar_line,y
-  sta _SCREEN_ADDR,y
-  lda #113  ;numbers etc, white
-  sta _COLOUR_SCREEN_ADDR,y
-  cpy #0
-  bne status_bar_setup_loop
-
-  ;Set colour for diamond, bomb, time and life characters used in status bar
-  lda #114  ;diamond, light pink
-  sta _COLOUR_SCREEN_ADDR
-  lda #115  ;time, light cyan
-  sta _COLOUR_SCREEN_ADDR+5
-  lda #82  ;life, medium red
-  sta _COLOUR_SCREEN_ADDR+24
-  lda #118  ;bomb, light blue
-  sta _COLOUR_SCREEN_ADDR+27
-  rts
-
-; *************************************************************************************
 ; Set the status bar display with values applied during the games (cave time, diamonds required, etc)
 ; and apply the status message if set
 update_status_bar
@@ -2668,49 +2693,52 @@ status_bar_loop_1
   dex
   lda status_bar_line,x
   sta _SCREEN_ADDR,x
+  lda #113  ;numbers etc, white
+  sta _COLOUR_SCREEN_ADDR,x
   cpx #0
   bne status_bar_loop_1
 
-  ;set the colours for the bomb and life special characters
-  lda #82  ;life, medium red
-  sta _COLOUR_SCREEN_ADDR+24
-  lda #118  ;bomb, light blue
-  sta _COLOUR_SCREEN_ADDR+27
-
-  cpy #message_none
-  beq skip_clear_status_colours
-
-  ;for the message, clear the colours for the bomb and life special characters
-  lda #113  ;numbers etc, white
-  sta _COLOUR_SCREEN_ADDR+24
-  sta _COLOUR_SCREEN_ADDR+27
-
-skip_clear_status_colours
+  ;Set colour for diamond, time characters used in status bar
+  lda #114  ;diamond, light pink
+  sta _COLOUR_SCREEN_ADDR
+  lda #115  ;time, light cyan
+  sta _COLOUR_SCREEN_ADDR+5
 
   ;draw second part of the status bar which may be replaced with a message
   ldx #16
 status_bar_loop_2
   dex
-  lda status_bar_line+24,x
-  sta draw_status_bar_char+1  ;self-mod, set standard status bar character
 
   cpy #message_none
-  beq draw_status_bar_char
-  lda status_messages-1,y
+  beq draw_standard_status_bar
+
   dey
+  lda status_messages,y
   sta draw_status_bar_char+1  ;self-mod, set status bar character to message
   jmp draw_status_bar_char
 
-draw_status_bar_space
-  lda #32
-  sta draw_status_bar_char+1  ;self-mod, set status bar character to space
+draw_standard_status_bar
+  lda status_bar_line+24,x
+  sta draw_status_bar_char+1  ;self-mod, set standard status bar character
 
 draw_status_bar_char
-  lda #32
+  lda #32  ;self-mod character
   sta _SCREEN_ADDR+24,x
+  lda #113  ;numbers etc, white
+  sta _COLOUR_SCREEN_ADDR+24,x
   cpx #0
   bne status_bar_loop_2
 
+  cpy #message_none
+  bne end_update_status_bar
+
+  ;Set colour for life, bomb characters used in status bar
+  lda #82  ;life, medium red
+  sta _COLOUR_SCREEN_ADDR+24
+  lda #118  ;bomb, light blue
+  sta _COLOUR_SCREEN_ADDR+27
+
+end_update_status_bar
   rts
 
 ; *************************************************************************************
@@ -3184,179 +3212,9 @@ tile_below_store_row  ;special row for pseudo-random generated caves with extra-
 !source "cavedata.asm"
 
 ; *************************************************************************************
-; Big Rockford and instructions
-
-big_rockford_instructions
-  !fill 12, " "
-  !scr "boulder dash                "
-
-  !fill 40, " "
-
-  !fill 12, " "
-  !scr "rockford must gather all    "
-
-  !fill 12, " "
-  !scr "diamonds needed to complete "
-
-  !byte 32,32,209,210,211,212,32,32,32,32,32,32
-  !scr "each cave and reach the     "
-
-  !byte 32,32,213,214,79,215,216,32,32,32,32,32
-  !scr "exit before time runs out   "
-
-  !byte 32,32,217,218,219,220,221,32,222,32,32,32
-  !fill 28, " "
-  
-  !byte 32,32,223,224,225,226,227,228,229,230,32,32
-  !scr "use joystick 1 to move      "
-
-  !byte 32,32,231,232,233,234,235,236,229,236,32,32
-  !scr "fire + direction clears     "
-
-  !byte 32,32,237,238,32,239,240,241,229,242,32,32
-  !scr "space, pushes rocks, grabs  "
-
-  !byte 32,32,32,32,32,32,32,32,243,32,32,32
-  !scr "diamonds or plants bombs    "
-
-  !fill 40, " "
-
-  !fill 12, " "
-  !scr "press q to restart a cave   "
-
-  !fill 12, " "
-  !scr "press space to pause        "
-
-  !fill 40, " "
-
-  !fill 12, " "
-  !scr "select version              "
-
+!source "vervars.asm"  ;tables of data used for version selection overwitten by cache
 
 ; *************************************************************************************
-; sound effects
-;  volume + voice-select byte, noise or voice 2 word, voice1 word
-;  if volume + voice-select is zero, deactivate sound fx
-;
-;  volume + voice-select for _VOLUME_SELECT: 
-;    bits 0-3 = volume (values 0 to 15)
-;    bit 4 = voice 1 on / off (1 / 0)
-;    bit 5 = voice 2 on / off (1 / 0)
-;    bit 6 = noise on / off (1 / 0). Uses voice 2 which must be off
-;    bit 7 = sound on / off (0 / 1)
-voice_1 = 16
-voice_2 = 32
-voice_noise = 64  ;noise on voice 2
-
-!align 255, 0
-list_of_sounds
-active_sound_offset
-  !byte 0
-
-sound_fx_rockford_move
-  !byte (3+voice_noise)
-  !word $0373,0
-  !byte (4+voice_noise)
-  !word $0363,0
-  !byte 0  ;terminator 0
-sound_fx_rock_move
-  !byte (15+voice_noise)
-  !word $010d,0
-  !byte (13+voice_noise)
-  !word $010c,0
-  !byte (11+voice_noise)
-  !word $010a,0
-  !byte 0  ;terminator 0
-sound_fx_enter_cave
-  !byte (15+voice_noise)
-  !word $03ff,0
-  !byte (15+voice_noise)
-  !word $03ef,0
-  !byte (15+voice_noise)
-  !word $03df,0
-  !byte 0  ;terminator 0
-sound_fx_explosion
-  !byte (15+voice_noise)
-  !word $03ff,0
-  !byte (15+voice_noise)
-  !word $03ef,0
-  !byte (15+voice_noise)
-  !word $03df,0
-  !byte (12+voice_noise)
-  !word $037f,0
-  !byte 0  ;terminator 0
-sound_fx_got_diamond
-  !byte (9+voice_1)
-  !word 0,$0338
-  !byte (6+voice_1)
-  !word 0,$034e
-  !byte (3+voice_1)
-  !word 0,$0373
-  !byte 0  ;terminator 0
-sound_fx_diamond_move
-  !byte (15+voice_1)
-  !word 0,$0373
-  !byte (12+voice_1)
-  !word 0,$0376
-  !byte (9+voice_1)
-  !word 0,$0372
-  !byte 0  ;terminator 0
-sound_fx_got_all_diamonds
-  !byte (15+voice_1)
-  !word 0,$02c3
-  !byte (12+voice_1)
-  !word 0,$0338
-  !byte (9+voice_1)
-  !word 0,$036a
-  !byte (6+voice_1)
-  !word 0,$0373
-  !byte 0  ;terminator 0
-sound_fx_exit_cave
-  !byte (3+voice_1)
-  !word 0,$03b5
-  !byte (2+voice_1)
-  !word 0,$03b2
-  !byte (1+voice_1)
-  !word 0,$03af
-  !byte 0  ;terminator 0
-sound_amoeba_magic_wall
-  !byte (3+voice_1)
-  !word 0,$0200
-  !byte (2+voice_1)
-  !word 0,$0200
-  !byte (1+voice_1)
-  !word 0,$0200
-  !byte 0  ;terminator 0
-sound_random
-  !byte (8+voice_1)
-  !word 0,$0300
-  !byte (7+voice_1)
-  !word 0,$0300
-  !byte (6+voice_1)
-  !word 0,$0300
-  !byte 0  ;terminator 0
-
-; *************************************************************************************
-; title theme tune
-;
-theme_voice_1
-  !word $02C3, $0304, $032C, $0361, $02E5, $0312, $032C, $0373, $0338, $034E, $0361, $037B, $034E, $03A2, $0358, $0396
-  !word $02C3, $0361, $0258, $02E5, $029C, $0373, $02E5, $029C, $02C3, $0361, $0258, $02E5, $0338, $03B1, $0361, $0338
-  !word $029C, $034E, $0224, $02C3, $0320, $03A7, $034E, $0320, $0258, $0358, $0286, $0361, $0312, $0312, $0389, $0312
-  !word $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361
-  !word $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $034E, $034E, $034E, $034E
-  !word $0361, $03B1, $0361, $03A7, $0361, $03A2, $0361, $0396, $034E, $03A7, $034E, $03A7, $034E, $0389, $034E, $03A7
-  !word $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $0361, $034E, $034E, $034E, $034E
-  !word $0382, $0361, $032C, $0304, $0373, $034E, $0312, $029C, $0382, $0361, $032C, $0304, $0373, $034E, $0312, $029C
-
-theme_voice_2
-  !word $0185, $0258, $02C3, $02F5, $0137, $0286, $029C, $0312, $00E0, $00E0, $0270, $00E0, $029C, $0389, $02B0, $037B
-  !word $0185, $0185, $0185, $0185, $0137, $0137, $0137, $0137, $0185, $0185, $0185, $0185, $0270, $0270, $0270, $0270
-  !word $0137, $0137, $0137, $0137, $023F, $023F, $023F, $023F, $00B1, $032C, $00B1, $032C, $0049, $0049, $0185, $0185
-  !word $0185, $0185, $0185, $0185, $02C3, $02C3, $0185, $0185, $0137, $0137, $0137, $0137, $029C, $029C, $0137, $0137
-  !word $0185, $0382, $0185, $0389, $02C3, $0382, $0185, $0389, $0137, $0382, $0137, $0389, $029C, $0373, $0137, $037B
-  !word $0185, $0185, $0185, $0396, $02C3, $02C3, $0185, $037B, $0137, $0137, $0137, $0137, $029C, $029C, $0137, $0137
-  !word $0185, $0382, $0185, $0389, $02C3, $0382, $0185, $0389, $0137, $0382, $0137, $0389, $029C, $0373, $0137, $037B
-  !word $0361, $032C, $0304, $02C3, $034E, $0312, $02E5, $0137, $0396, $0382, $0361, $032C, $0312, $02E5, $029C, $0137
+!source "sounds.asm"  ;sound effects and theme tune
 
 end_of_game

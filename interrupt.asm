@@ -16,6 +16,13 @@ interrupt_actions
   stx irq_x
   sty irq_y
 
+;Check about running dissolve screen
+  lda dissolve_to_solid_flag+1
+  cmp #map_unprocessed
+  bne skip_dissolve_effect
+  jsr screen_dissolve_effect
+skip_dissolve_effect
+
 interrupt_sound
   jsr update_sounds  ;self-mod into play_theme_tune or update_sounds
   jsr read_user_input

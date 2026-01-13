@@ -779,11 +779,6 @@ cave_play_order
   !byte 13, 14, 15, 19
   !byte 4, 8, 12, 0
 
-version_selection_cycle_up
-  !byte 5,0,1,2,3,4
-version_selection_cycle_down
-  !byte 1,2,3,4,5,0
-
 cave_selection_cycle_up
   !byte 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,0
 cave_selection_cycle_down
@@ -837,28 +832,6 @@ status_message_game_over
   !scr "   game over    "
 status_message_loading
   !scr "loading...      "
-
-cave_version_prefix
-  !scr "BD1-"
-  !scr "BD2-"
-  !scr "BD3-"
-  !scr "BP1-"
-  !scr "AR1-"
-  !scr "AR2-"
-
-version_choices_text
-  !scr "boulder dash 1 "
-  !byte 0
-  !scr "boulder dash 2 "
-  !byte 0
-  !scr "boulder dash 3 "
-  !byte 0
-  !scr "boulder dash +1"
-  !byte 0
-  !scr "arno dash 1    "
-  !byte 0
-  !scr "arno dash 2    "
-  !byte 0
 
 game_title
   !scr "boulder dash"
