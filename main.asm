@@ -3173,6 +3173,7 @@ copy_size
 ; *************************************************************************************
 !source "vars.asm"  ;tables of data
 !source "interrupt.asm"  ;interrupt routines for joystick, keyboard input and sounds
+!source "themetune.asm"  ;title theme tune
 
 ; *************************************************************************************
 ; Cave tile map
