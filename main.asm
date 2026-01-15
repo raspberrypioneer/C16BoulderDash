@@ -313,6 +313,11 @@ play_next_life
   lda player_lives
   bne play_next_life
 
+  ;end last screen by hiding it with steel sprites via interrupt
+  jsr prepare_reveal_hide_code
+  lda #map_unprocessed
+  sta dissolve_to_solid_flag+1  ;this causes the interrupt to run screen_dissolve_effect
+
   jmp menu_loop
 
 ; ****************************************************************************************************
@@ -600,7 +605,9 @@ exit_intro_keypress
   sta growing_wall_handler_low
   lda #>handler_growing_wall
   sta growing_wall_handler_high
-  rts
+
+  ;reset cave colours before dissolve screen
+  jmp set_cave_colours
 
 cave_down
   ldy cave_number
@@ -741,8 +748,7 @@ continue_prepare_cave
   jsr prepare_reveal_hide_code
   lda #map_space
   sta dissolve_to_solid_flag+1
-  jsr screen_dissolve_effect
-  rts
+  jmp screen_dissolve_effect
 
 ; *************************************************************************************
 reset_grid_of_sprites
@@ -838,8 +844,7 @@ screen_dissolve_loop
 
   ;for normal game play, nop out the logic applied above in draw grid (self-mod code)
   ldx #6
-  jsr self_mod_code
-  rts
+  jmp self_mod_code
 
 ; *************************************************************************************
 ; Apply the tile show/hide routine for each game play tick
@@ -950,13 +955,24 @@ set_cave_colours
   ora #80  ;medium brightness
   sta _COLOUR_REGISTER_2_ADDR
 
+  ;Set base colour
+  lda #<_COLOUR_SCREEN_ADDR+40
+  sta screen_addr2_low  ;target low
+  lda #>_COLOUR_SCREEN_ADDR+40
+  sta screen_addr2_high  ;target high
+
+  ;size is 24 lines x 40 characters
+  lda #$c0
+  sta clear_size  
+  lda #$03
+  sta clear_size+1
+
+  ;clear to colour
   ;ignore third colour parameter, param_colours+2 for group 3 most of walls, rockford; part of rocks, diamonds
   lda #122  ;bright, off-white shade
-  sta _COLOUR_REGISTER_3_ADDR
-  sta foreground_colourA+1
-  sta foreground_colourB+1
+  sta clear_to
 
-  rts
+  jmp clear_memory
 
 ; *************************************************************************************
 ; Apply the parameters for the cave being played
@@ -1025,9 +1041,7 @@ update_status_bar_from_params
   ;update diamonds required, bombs available, player lives on status bar
   jsr update_diamonds_required
   jsr update_bombs_available
-  jsr update_player_lives
-
-  rts
+  jmp update_player_lives
 
 ; *************************************************************************************
 ; Plays the cave, each iteration of the loop is a game play tick
@@ -1205,11 +1219,9 @@ lose_a_life
   dec player_lives
   jsr update_player_lives
   ldy #message_none
-  jsr update_status_bar
-  rts
+  jmp update_status_bar
 unsuccessful_bonus_cave
-  jsr calculate_next_cave_number_and_level
-  rts
+  jmp calculate_next_cave_number_and_level
 
 ; *************************************************************************************
 ; Update screen while paused, or out of time, or at end position
@@ -1538,18 +1550,6 @@ loop_plot_row
   lda char_screen_below_high,y
   sta screen_addr2_high
 
-  lda char_screen_low,y
-  sta colour_addr1_low  ;colour low values are the same as screen low values
-  lda char_screen_high,y
-  and #$0b  ;use char screen high to calculate colour high values e.g. $0c -> $08 etc
-  sta colour_addr1_high
-
-  lda char_screen_below_low,y
-  sta colour_addr2_low  ;colour low values are the same as screen low values
-  lda char_screen_below_high,y
-  and #$0b  ;use char screen high to calculate colour high values e.g. $0c -> $08 etc
-  sta colour_addr2_high
-
   lda #0
   sta map_cols  ;grid column counter
 loop_plot_column
@@ -1612,12 +1612,6 @@ top_left_char
 bottom_left_char
   lda #67
   sta (screen_addr2_low),y
-
-foreground_colourA
-  lda #14  ;blue
-  sta (colour_addr1_low),y
-  sta (colour_addr2_low),y
-
   iny
 
 top_right_char
@@ -1626,11 +1620,6 @@ top_right_char
 bottom_right_char
   lda #68
   sta (screen_addr2_low),y
-
-foreground_colourB
-  lda #14  ;blue
-  sta (colour_addr1_low),y
-  sta (colour_addr2_low),y
 
 skip_null_tile
   inc cache_temp2
@@ -1799,8 +1788,7 @@ skip_bonus_stage
   stx map_cols
   sty visible_top_left_map_y
   sty map_rows
-  jsr map_xy_position_to_map_address
-  rts
+  jmp map_xy_position_to_map_address
 
 ; *************************************************************************************
 ; Update the gameplay map with action handlers for each of the game actors
@@ -3162,6 +3150,39 @@ copy_return
 
 copy_size
   !byte 0, 0
+
+; *************************************************************************************
+; Clear a number of bytes in target memory locations, using clear_size and clear_to
+clear_memory
+
+  ldy #0
+  ldx clear_size+1
+  beq clear_remaining_bytes
+clear_a_page
+  lda clear_to
+  sta (screen_addr2_low),y
+  iny
+  bne clear_a_page
+  inc screen_addr2_high
+  dex
+  bne clear_a_page
+clear_remaining_bytes
+  ldx clear_size
+  beq clear_return
+clear_a_byte
+  lda clear_to
+  sta (screen_addr2_low),y
+  iny
+  dex
+  bne clear_a_byte
+
+clear_return
+  rts
+
+clear_size
+  !byte 0, 0
+clear_to
+  !byte 0
 
 ; *************************************************************************************
 ; Custom character set for fonts and sprites
