@@ -384,7 +384,7 @@ big_rockford_draw
   jsr setup_IRQ  ;setup joystick-keyboard actions interrupt
 
   ;version selection
-  lda version_selected
+  lda version_selected+1
 version_display
   jsr show_version_text
 
@@ -418,7 +418,7 @@ version_loop
 
 end_version_selection
 
-  lda version_selected  ;multiply by 4 (2 x asl)
+  lda version_selected+1  ;multiply by 4 (2 x asl)
   asl
   asl
   tay
@@ -441,19 +441,16 @@ loading_message_loop
   rts
 
 version_down
-  ldy version_selected
+  ldy version_selected+1
   lda version_selection_cycle_down,y
-  sta version_selected
+  sta version_selected+1
   jmp version_display
 
 version_up
-  ldy version_selected
+  ldy version_selected+1
   lda version_selection_cycle_up,y
-  sta version_selected
+  sta version_selected+1
   jmp version_display
-
-version_selected
-  !byte 0
 
 show_version_text
   ldx #0  ;data position counter
@@ -465,7 +462,8 @@ version_lines_loop
   lda #113  ;white bright
   sta set_version_line_colour+1  ;self-mod
   lda temp1
-  cmp version_selected
+version_selected
+  cmp #0  ;self-mod, see above
   bne draw_version_line
   lda #83 ;cyan medium brightness
   sta set_version_line_colour+1  ;self-mod
@@ -752,7 +750,7 @@ continue_prepare_cave
 
 ; *************************************************************************************
 reset_grid_of_sprites
-    ldx #$fd
+    ldx #(12*20)  ;12 rows x 20 columns of sprites on a screen
     lda #$ff
 reset_grid_of_sprites_loop
     dex
@@ -970,7 +968,7 @@ set_cave_colours
   ;clear to colour
   ;ignore third colour parameter, param_colours+2 for group 3 most of walls, rockford; part of rocks, diamonds
   lda #122  ;bright, off-white shade
-  sta clear_to
+  sta clear_to_byte+1
 
   jmp clear_memory
 
@@ -1233,15 +1231,16 @@ update_with_gameplay_not_active
   beq check_if_end_position_reached
   ; pause mode, show pause message
   lda #0
-  sta pause_counter
+  sta pause_counter+1
 update_while_initially_pressing_pause_loop
   jsr check_for_pause_key
   bne update_while_initially_pressing_pause_loop
 pause_loop
-  inc pause_counter
+  inc pause_counter+1
   ldy #message_paused
   ; toggle between showing pause and clear message every 16 ticks
-  lda pause_counter
+pause_counter
+  lda #0  ;Self-mod, see above
   and #$10
   beq skip_showing_players_and_men
   ldy #message_clear
@@ -1254,9 +1253,6 @@ update_while_finally_pressing_unpause_loop
   lda #message_none
   sta saved_message
   rts
-
-pause_counter
-  !byte 0
 
 check_if_end_position_reached
   lda neighbour_cell_contents
@@ -1332,16 +1328,14 @@ skip_bonus
   ldy #message_none
 
 update_during_pause_or_out_of_time
-  sty save_message_number
+  sty save_message_number+1
   jsr update_status_bar
   jsr draw_grid_of_sprites
-  ldy save_message_number
+save_message_number
+  ldy #0  ; Self-mod, see above
   jsr check_for_pause_key
 gameplay_not_active_return
   rts
-
-save_message_number
-  !byte 0
 
 ; *************************************************************************************
 check_for_pause_key
@@ -1404,7 +1398,7 @@ populate_cave_from_loaded_data
   sta plot_cave_tiles_x2+1           ; Store in self-modifying code location
 
   lda #$14                           ; Set row counter to 20 (excluding steel top and bottom rows)
-  sta load_row_counter
+  sta load_row_counter+1
   lda #<tile_map_row_1               ; Point to start of map (low)
   sta map_address_low
   lda #>tile_map_row_1               ; Point to start of map (high)
@@ -1434,16 +1428,14 @@ load_skip_inc_high_byte
   bne plot_cave_tiles_x2             ; Continue if not
   lda #$40                           ; Add 64 to map_address_low
   jsr add_a_to_ptr
-  dec load_row_counter               ; Decrease row counter by 1
-  lda load_row_counter
+  dec load_row_counter+1             ; Decrease row counter by 1
+load_row_counter
+  lda #0  ;Self-mod, see above
   beq populate_cave_return           ; If no more rows (counter is zero), go to end of routine
   jmp load_plot_cave_row             ; Continue to plot the next cave row
 
 populate_cave_return
   rts
-
-load_row_counter
-  !byte 0
 
 ; *************************************************************************************
 add_a_to_ptr
@@ -1560,10 +1552,9 @@ loop_plot_column
 
   ;Next 6 bytes are changed with self-mod code
 skip_tile_check
-  cmp #map_growing_wall
-  beq skip_null_tile
-  nop
-  nop
+  cmp #map_unprocessed
+  bcc not_titanium
+  lda #map_titanium_wall
 not_titanium
 
   tay
@@ -2365,7 +2356,7 @@ handler_slime
   tay
   lda items_allowed_through_slime,y  ; read which cell types are allowed to fall through
   beq slime_return                   ; If not the right type (rock / diamond / bomb) then end
-  sta item_allowed
+  sta item_allowed+1
   lda cell_below
   bne slime_return                   ; If no space below the slime for a rock / diamond / bomb to fall then end
   lda param_slime_permeability
@@ -2385,14 +2376,12 @@ slime_delay
 slime_pass_through
   lda #map_unprocessed | map_space   ; something will fall into the wall, clear the cell above
   sta cell_above
-  lda item_allowed
+item_allowed
+  lda #0                             ; Self-mod, see above
   ora #map_anim_state4               ; mark the rock / diamond / bomb as fallen
   sta cell_below                     ; store the item that has fallen through the wall below
 slime_return
   rts
-
-item_allowed
-  !byte 0
 
 ; ****************************************************************************************************
 ; Pseudo-random function
@@ -2997,7 +2986,7 @@ populate_cave_tiles_pseudo_random
   sta random_seed1
 
   lda #$16                           ; Set number of rows to 22 (includes steel top and bottom rows)
-  sta populate_row_counter
+  sta populate_row_counter+1
   lda #<tile_map_row_1               ; Point to start of map (low)
   sta map_address_low
   lda #>tile_map_row_1               ; Point to start of map (high)
@@ -3006,7 +2995,7 @@ populate_cave_row
   ldy #$00                           ; Set column start to 0
 populate_cave_tile
   lda tile_below_store_row,y         ; Needed for BD2 caves G, K, get previously stored tile
-  sta tile_override                  ; The override tile might need to replace the random tile
+  sta check_tile_override+1          ; The override tile might need to replace the random tile
 
   ldx param_initial_fill_tile        ; Set cave fill tile
   jsr pseudo_random                  ; Call pseudo-random routine returning random_seed1 in the accumulator
@@ -3053,7 +3042,7 @@ apply_random_tile_ok
   sta (map_address_low),y
 
 check_tile_override
-  lda tile_override
+  lda #0                             ; Self-mod, see above
   beq skip_below_tile                ; Needed for BD2 caves G, K, check the override tile is 0
   sta (map_address_low),y            ; If not then apply the override tile
   lda #0                             ; Reset the tile below current one for next time
@@ -3065,26 +3054,22 @@ skip_below_tile
   bne populate_cave_tile             ; Continue if not
   lda #$40                           ; Add 64 to map_address_low
   jsr add_a_to_ptr
-  dec populate_row_counter
-  lda populate_row_counter
+  dec populate_row_counter+1
+populate_row_counter
+  lda #0  ;Self-mod, see above
   beq tiles_pseudo_return            ; Rows are zero, so end
   jmp populate_cave_row              ; Continue to plot the next cave row
 tiles_pseudo_return
   rts
-
-populate_row_counter
-  !byte 0
-
-tile_override
-  !byte 0
 
 ; *************************************************************************************
 load_cave_for_version
 
   ;Set cave letter to load
   lda cave_number
-  cmp load_cave_number_stored        ; Check if the cave is already stored
-  beq cave_already_loaded            ; Skip if already loaded
+load_cave_number_stored
+  cmp #$ff  ;Check if the cave is already stored, initially cave $ff isn't a valid one, so will always loads cave A
+  beq cave_already_loaded  ; Skip if already loaded
   clc
   adc #65
   sta name_of_cave+4
@@ -3106,7 +3091,7 @@ load_cave_for_version
   jsr _KERNAL_LOADSP  ;Kernal: LOADSP, load into memory from device
 
   lda cave_number
-  sta load_cave_number_stored
+  sta load_cave_number_stored+1
 
 cave_already_loaded
   rts
@@ -3114,10 +3099,6 @@ cave_already_loaded
 ;Version prefix populated in version selection
 name_of_cave
   !scr "BD1-A"
-
-;Initially cave $ff isn't a valid cave, so will always loads cave A
-load_cave_number_stored
-    !byte $ff                          
 
 ; *************************************************************************************
 ; Copy a number of bytes (in copy size variable) from source to target memory locations
@@ -3152,14 +3133,14 @@ copy_size
   !byte 0, 0
 
 ; *************************************************************************************
-; Clear a number of bytes in target memory locations, using clear_size and clear_to
+; Clear a number of bytes in target memory locations, using clear_size and clear_to_byte
 clear_memory
 
   ldy #0
   ldx clear_size+1
   beq clear_remaining_bytes
 clear_a_page
-  lda clear_to
+  lda clear_to_byte+1
   sta (screen_addr2_low),y
   iny
   bne clear_a_page
@@ -3169,20 +3150,18 @@ clear_a_page
 clear_remaining_bytes
   ldx clear_size
   beq clear_return
-clear_a_byte
-  lda clear_to
+clear_to_byte
+  lda #0  ;self-mod, see above
   sta (screen_addr2_low),y
   iny
   dex
-  bne clear_a_byte
+  bne clear_to_byte
 
 clear_return
   rts
 
 clear_size
   !byte 0, 0
-clear_to
-  !byte 0
 
 ; *************************************************************************************
 ; Custom character set for fonts and sprites
