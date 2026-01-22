@@ -804,13 +804,11 @@ self_mod_code_table
 ;
 status_bar_line
   !byte 244
-  !scr "000 "
+  !scr "0   "
   !byte 246
-  !scr "000  score 00000  "
+  !scr "0    score 00000  "
   !byte 247
-  !scr "00 "
-  !byte 245
-  !scr "    cave Z9"
+  !scr "0       cave Z9"
 
 status_messages
 status_message_clear

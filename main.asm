@@ -694,12 +694,7 @@ wait_for_dissolve_to_end
   jsr update_status_bar
   jsr prepare_cave
 
-  jsr update_cave_time
-  jsr update_player_score
-  ldy #message_none
-  sty saved_message
-  jsr update_status_bar
-
+  ;main game play loop
   jsr gameplay_loop
 
   ;check for game over
@@ -735,6 +730,12 @@ prepare_standard_cave
   jsr initialise_stage
   lda #sprite_wall1
   sta growing_wall_sprite
+
+  jsr update_cave_time
+  jsr update_player_score
+  ldy #message_none
+  sty saved_message
+  jsr update_status_bar
 continue_prepare_cave
 
   ;initialise cave for game
@@ -968,8 +969,6 @@ set_cave_colours
   ;clear to colour
   ;ignore third colour parameter, param_colours+2 for group 3 most of walls, rockford; part of rocks, diamonds
   lda #122  ;bright, off-white shade
-  sta clear_to_byte+1
-
   jmp clear_memory
 
 ; *************************************************************************************
@@ -2700,7 +2699,7 @@ draw_status_bar_char
   lda #82  ;life, medium red
   sta _COLOUR_SCREEN_ADDR+24
   lda #118  ;bomb, light blue
-  sta _COLOUR_SCREEN_ADDR+27
+  sta _COLOUR_SCREEN_ADDR+28
 
 end_update_status_bar
   rts
@@ -3135,6 +3134,8 @@ copy_size
 ; *************************************************************************************
 ; Clear a number of bytes in target memory locations, using clear_size and clear_to_byte
 clear_memory
+
+  sta clear_to_byte+1  ;accumulator parameter
 
   ldy #0
   ldx clear_size+1
