@@ -2221,7 +2221,6 @@ skip_storing_space_above
   ldy cell_below
   bne magic_wall_is_active
   ; store the item that has fallen through the wall below
-  ora #map_anim_state4  ; mark the rock / diamond / bomb as fallen
   sta cell_below
 magic_wall_is_active
   lda #magic_wall_sound
