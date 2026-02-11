@@ -45,7 +45,7 @@ The main program is `main.asm`. It includes other programs such as `spr.asm`, `v
 `bd_run.bat` loads the D64 file using the VICE emulator. The basic command `RUN` starts the game.
 
 ## Caves
-- All 20 caves are available in memory (16 standard and 4 bonus caves). They each have the same size, 48 bytes used for parameters, 400 bytes for the map. Each tile in the map is a nibble (each byte represents two tiles). When a particular cave is about to be played, it is loaded into a section of memory labelled `cave_parameter_data`. See `cavedata.asm` for more details about the parameters available. 
+- All 20 caves are available (16 standard and 4 bonus caves), each one loaded when needed. They each have the same size, 48 bytes used for parameters, 400 bytes for the map. Each tile in the map is a nibble (each byte represents two tiles). When a particular cave is about to be played, it is loaded into a section of memory labelled `cave_parameter_data`. See `cavedata.asm` for more details about the parameters available. 
 - New cave files can be converted from BDCFF files found on [Arno's Boulder Dash fansite](https://www.boulder-dash.nl/) using a conversion utility `BDCavegen.py`.
 
 ## Acknowledgements
