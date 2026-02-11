@@ -18,7 +18,7 @@ big_rockford_instructions
   !byte 32,32,209,210,211,212,32,32,32,32,32,32
   !scr "each cave and reach the     "
 
-  !byte 32,32,213,214,79,215,216,32,32,32,32,32
+  !byte 32,32,213,214,65,215,216,32,32,32,32,32
   !scr "exit before time runs out   "
 
   !byte 32,32,217,218,219,220,221,32,222,32,32,32
