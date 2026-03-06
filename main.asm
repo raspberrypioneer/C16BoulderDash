@@ -220,11 +220,11 @@ visible_top_left_map_y = $55
 score_low = $0d
 score_high = $0e
 
-temp1 = $72
-temp2 = $73
+temp1 = $56
+temp2 = $57
 
-player_lives = $56
-cave_number = $57
+player_lives = $72
+cave_number = $73
 difficulty_level = $58
 diamonds_required = $59
 time_remaining = $5a
@@ -311,11 +311,6 @@ play_next_life
   jsr play_one_life
   lda player_lives
   bne play_next_life
-
-  ;end last screen by hiding it with steel sprites via interrupt
-  jsr prepare_reveal_hide_code
-  lda #map_unprocessed
-  sta dissolve_to_solid_flag+1  ;this causes the interrupt to run screen_dissolve_effect
 
   jmp menu_loop
 
@@ -501,7 +496,6 @@ intro_and_cave_select
   sta cave_number
 
   ;set-up cave and variables
-  jsr load_cave_for_version
   jsr prepare_cave
 
   ;knock-out Rockford and growing wall handlers for now
@@ -525,7 +519,9 @@ intro_and_cave_select
   lda #>play_theme_tune
   sta interrupt_sound+2
 
-  ;set title text
+  ;set title text after caching the screen (preventing draw of growing wall which is reused for title text)
+  jsr update_map
+  jsr draw_grid_of_sprites
   jsr set_title_text
 
   ;Tick counter needed for some animation
@@ -603,7 +599,7 @@ exit_intro_keypress
   lda #>handler_growing_wall
   sta growing_wall_handler_high
 
-  ;reset cave colours before dissolve screen
+  ;reset cave colours
   jmp set_cave_colours
 
 cave_down
@@ -664,34 +660,17 @@ game_title_loop
 ; Game action starts here, playing one of Rockford's lives
 play_one_life
 
+  ;set-up cave and variables
   ldy #message_loading
   jsr update_status_bar
-
-  ;end last screen by hiding it with steel sprites via interrupt
-  jsr prepare_reveal_hide_code
-  lda #map_unprocessed
-  sta dissolve_to_solid_flag+1  ;this causes the interrupt to run screen_dissolve_effect
-  jsr load_cave_for_version  ;load cave (dissolve runs at the same time in interrupt)
-
-  ;wait for dissolve to complete via interrupt
-wait_for_dissolve_to_end
-  nop
-  lda dissolve_to_solid_flag+1
-  bne wait_for_dissolve_to_end
-
-  ;cave letter and difficulty level on status bar
-  ldy cave_number
-  iny
-  sty status_bar_line+38
-  lda difficulty_level
-  clc
-  adc #48
-  sta status_bar_line+39
-
-  ;set-up cave and variables
+  jsr prepare_cave
   ldy #message_none
   jsr update_status_bar
-  jsr prepare_cave
+
+  ;dissolve screen when starting
+  jsr prepare_reveal_hide_code
+  lda #map_space
+  jsr screen_dissolve_effect
 
   ;main game play loop
   jsr gameplay_loop
@@ -704,11 +683,16 @@ wait_for_dissolve_to_end
   jsr update_status_bar
 
 not_game_over
-  rts
+
+  ;un-dissolve screen when ending
+  jsr prepare_reveal_hide_code
+  lda #map_unprocessed
+  jmp screen_dissolve_effect
 
 ; *************************************************************************************
 prepare_cave
 
+  jsr load_cave_for_version
   jsr initialise_variables
   jsr populate_cave_from_loaded_data
 
@@ -720,9 +704,9 @@ prepare_cave
   sta visible_top_left_map_x
   sta visible_top_left_map_y
   jsr set_rockford_start
-  jsr _CLEAR_SCREEN
-  lda #sprite_space
+  lda #sprite_space  ; set growing wall sprite to space sprite for intro screen, creating a blank obstacle
   sta growing_wall_sprite
+  jsr _CLEAR_SCREEN
   jmp continue_prepare_cave
 prepare_standard_cave
   jsr populate_cave_tiles_pseudo_random
@@ -740,13 +724,7 @@ continue_prepare_cave
   ;initialise cave for game
   jsr set_cave_colours
   jsr draw_borders
-  jsr reset_grid_of_sprites
-
-  ;dissolve screen when starting
-  jsr prepare_reveal_hide_code
-  lda #map_space
-  sta dissolve_to_solid_flag+1
-  jmp screen_dissolve_effect
+  jmp reset_grid_of_sprites
 
 ; *************************************************************************************
 reset_grid_of_sprites
@@ -816,10 +794,9 @@ prepare_reveal_hide_code
 
 ; *************************************************************************************
 ; Apply the cave open/close tiles which show/hide the tiles on screen
-; Called in game play to reveal a cave and via interrupt when cave is being hidden,
-; which is also when a cave is loaded (hence the interrupt approach)
 ; Performed in a loop using the game tick counter
 screen_dissolve_effect
+  sta dissolve_to_solid_flag+1
 
   ; use 'random' audio pitches to play while revealing the map
   ; although set below, sound does not play when loading, reason unclear
@@ -836,7 +813,7 @@ screen_dissolve_loop
 
   jsr ambient_note_end
 
-  ; reset dissolve_to_solid_flag which stops interrupt running this routine
+  ; reset dissolve_to_solid_flag
   lda #map_space
   sta dissolve_to_solid_flag+1
 
@@ -1033,6 +1010,15 @@ clear_bomb_on_status_bar
   lda #32
   sta status_bar_line+28
 update_status_bar_from_params
+
+  ;cave letter and difficulty level on status bar
+  ldy cave_number
+  iny
+  sty status_bar_line+38
+  lda difficulty_level
+  clc
+  adc #48
+  sta status_bar_line+39
 
   ;update diamonds required, bombs available, player lives on status bar
   jsr update_diamonds_required
@@ -3062,14 +3048,25 @@ load_cave_for_version
 load_cave_number_stored
   cmp #$ff  ;Check if the cave is already stored, initially cave $ff isn't a valid one, so will always loads cave A
   beq cave_already_loaded  ; Skip if already loaded
+
+  sei
+  ldx #$0e
+  ldy #$ce
+  stx $0314
+  sty $0315
+  cli
+
+  lda cave_number
   clc
   adc #65
   sta name_of_cave+4
 
+load_file_routines
+
   ;SETLFS
-  lda #$01  ;1 is logical file number
-  ldx #$08  ;8 is device number (disk)
-  ldy #$01  ;1 means use secondary address (load into memory location set in PRG first 2 bytes)
+  lda #1    ;1 is logical file number
+  ldx $ae   ;address of the device number (disk)
+  ldy #3    ;3 means ignore the two load-to byte addresses
   jsr _KERNAL_SETLFS  ;Kernal: SETLFS, set logical first and second addresses
 
   ;SETNAM
@@ -3080,13 +3077,30 @@ load_cave_number_stored
 
   ;LOADSP
   lda #$00  ;0 set operation to be load (not verify)
+  ldx #<cave_parameter_data
+  ldy #>cave_parameter_data
   jsr _KERNAL_LOADSP  ;Kernal: LOADSP, load into memory from device
+
+  lda $90  ;STATUS Kernal I/O status
+  and #$bf  ; Mask out bit 6 (EOI is normal at end of load)
+  bne load_error
 
   lda cave_number
   sta load_cave_number_stored+1
 
+  jsr setup_IRQ
+
 cave_already_loaded
   rts
+
+load_error
+;TODO: consider improving
+  jsr update_score  ;Error number shown in score
+
+;TODO: set correct message, probably include a timeout
+  ldy #message_out_of_time
+  jsr update_status_bar
+  jmp load_file_routines
 
 ;Version prefix populated in version selection
 name_of_cave

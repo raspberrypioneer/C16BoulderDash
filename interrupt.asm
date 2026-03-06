@@ -16,13 +16,6 @@ interrupt_actions
   stx irq_x
   sty irq_y
 
-;Check about running dissolve screen
-  lda dissolve_to_solid_flag+1
-  cmp #map_unprocessed
-  bne skip_dissolve_effect
-  jsr screen_dissolve_effect
-skip_dissolve_effect
-
 interrupt_sound
   jsr update_sounds  ;self-mod into play_theme_tune or update_sounds
   jsr read_user_input
@@ -47,13 +40,9 @@ interrupt_sound
 
 read_user_input
 
-  ldx #$fa  ;Latch value for port 1
-redo_it
-  stx _KEYBOARD_LATCH  ;Store latch value in keyboard latch register
+  lda #$fb  ;Latch value for port 1
+  sta _KEYBOARD_LATCH  ;Store latch value in keyboard latch register
   lda _KEYBOARD_LATCH  ;Read keyboard latch register
-  stx _KEYBOARD_LATCH  ;Store latch value in keyboard latch register
-  cmp _KEYBOARD_LATCH  ;Compare to previous reading
-  bne redo_it  ;If not equal, do it again
   eor #255   ;bit-flip, 1 now means direction, fire etc has been selected
   sta key_press
 
@@ -146,7 +135,9 @@ play_note_fx  ;Y is input into this routine, used to get the sound to play
   lda (sound_address_low),y
   sta _VOICE_1_LOW
   iny
-  lda (sound_address_low),y
+  lda _VOICE_1_HIGH
+  and #$fc  ;mask off 2 low bits
+  ora (sound_address_low),y
   sta _VOICE_1_HIGH
   iny
   sty active_sound_offset
@@ -158,12 +149,15 @@ ambient_note_end
   jmp note_clear
 
 note_end
-  lda #0
+  lda #no_sound
   sta play_sound_fx
   sta compare_sound_fx+1
 note_clear
-  sta _VOICE_1_LOW
+  lda _VOICE_1_HIGH
+  and #$fc  ;mask off 2 low bits
   sta _VOICE_1_HIGH
+  lda #no_sound
+  sta _VOICE_1_LOW
   sta _VOICE_2_LOW
   sta _VOICE_2_HIGH
   sta active_sound_offset
@@ -182,7 +176,7 @@ play_theme_tune
   lda #0  ;clear sound between notes
   sta _VOICE_1_LOW
   lda _VOICE_1_HIGH
-  and #$fc
+  and #$fc  ;mask off 2 low bits
   sta _VOICE_1_HIGH
   sta _VOICE_2_LOW
   lda _VOICE_2_HIGH
