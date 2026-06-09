@@ -1,125 +1,10 @@
 ; *************************************************************************************
-; sprite addresses
-;
-sprite_addresses_low
-  !byte <sprite_addr_space
-  !byte <sprite_addr_boulder1
-  !byte <sprite_addr_bubble
-  !byte <sprite_addr_diamond1
-  !byte <sprite_addr_diamond2
-  !byte <sprite_addr_diamond3
-  !byte <sprite_addr_diamond4
-  !byte <sprite_addr_titanium_wall1
-  !byte <sprite_addr_titanium_wall2
-  !byte <sprite_addr_box
-  !byte <sprite_addr_wall1
-  !byte <sprite_addr_wall2
-  !byte <sprite_addr_explosion1
-  !byte <sprite_addr_explosion2
-  !byte <sprite_addr_explosion3
-  !byte <sprite_addr_explosion4
-  !byte <sprite_addr_magic_wall1
-  !byte <sprite_addr_magic_wall2
-  !byte <sprite_addr_magic_wall3
-  !byte <sprite_addr_magic_wall4
-  !byte <sprite_addr_amoeba1
-  !byte <sprite_addr_amoeba2
-  !byte <sprite_addr_butterfly1
-  !byte <sprite_addr_butterfly2
-  !byte <sprite_addr_butterfly3
-  !byte <sprite_addr_firefly1
-  !byte <sprite_addr_firefly2
-  !byte <sprite_addr_firefly3
-  !byte <sprite_addr_firefly4
-  !byte <sprite_addr_earth1
-  !byte <sprite_addr_earth2
-  !byte <sprite_addr_pathway
-  !byte <sprite_addr_rockford_blinking1
-  !byte <sprite_addr_rockford_blinking2
-  !byte <sprite_addr_rockford_blinking3
-  !byte <sprite_addr_rockford_winking1
-  !byte <sprite_addr_rockford_winking2
-  !byte <sprite_addr_rockford_moving_down1
-  !byte <sprite_addr_rockford_moving_down2
-  !byte <sprite_addr_rockford_moving_down3
-  !byte <sprite_addr_rockford_moving_up1
-  !byte <sprite_addr_rockford_moving_up2
-  !byte <sprite_addr_rockford_moving_left1
-  !byte <sprite_addr_rockford_moving_left2
-  !byte <sprite_addr_rockford_moving_left3
-  !byte <sprite_addr_rockford_moving_left4
-  !byte <sprite_addr_rockford_moving_right1
-  !byte <sprite_addr_rockford_moving_right2
-  !byte <sprite_addr_rockford_moving_right3
-  !byte <sprite_addr_rockford_moving_right4
-  !byte <sprite_addr_bomb
-  !byte <sprite_addr_bomb3
-  !byte <sprite_addr_bomb2
-  !byte <sprite_addr_bomb1
-  !byte <sprite_addr_boulder2
-  !byte <sprite_addr_anti_space
-
-sprite_addresses_high
-  !byte >sprite_addr_space
-  !byte >sprite_addr_boulder1
-  !byte >sprite_addr_bubble
-  !byte >sprite_addr_diamond1
-  !byte >sprite_addr_diamond2
-  !byte >sprite_addr_diamond3
-  !byte >sprite_addr_diamond4
-  !byte >sprite_addr_titanium_wall1
-  !byte >sprite_addr_titanium_wall2
-  !byte >sprite_addr_box
-  !byte >sprite_addr_wall1
-  !byte >sprite_addr_wall2
-  !byte >sprite_addr_explosion1
-  !byte >sprite_addr_explosion2
-  !byte >sprite_addr_explosion3
-  !byte >sprite_addr_explosion4
-  !byte >sprite_addr_magic_wall1
-  !byte >sprite_addr_magic_wall2
-  !byte >sprite_addr_magic_wall3
-  !byte >sprite_addr_magic_wall4
-  !byte >sprite_addr_amoeba1
-  !byte >sprite_addr_amoeba2
-  !byte >sprite_addr_butterfly1
-  !byte >sprite_addr_butterfly2
-  !byte >sprite_addr_butterfly3
-  !byte >sprite_addr_firefly1
-  !byte >sprite_addr_firefly2
-  !byte >sprite_addr_firefly3
-  !byte >sprite_addr_firefly4
-  !byte >sprite_addr_earth1
-  !byte >sprite_addr_earth2
-  !byte >sprite_addr_pathway
-  !byte >sprite_addr_rockford_blinking1
-  !byte >sprite_addr_rockford_blinking2
-  !byte >sprite_addr_rockford_blinking3
-  !byte >sprite_addr_rockford_winking1
-  !byte >sprite_addr_rockford_winking2
-  !byte >sprite_addr_rockford_moving_down1
-  !byte >sprite_addr_rockford_moving_down2
-  !byte >sprite_addr_rockford_moving_down3
-  !byte >sprite_addr_rockford_moving_up1
-  !byte >sprite_addr_rockford_moving_up2
-  !byte >sprite_addr_rockford_moving_left1
-  !byte >sprite_addr_rockford_moving_left2
-  !byte >sprite_addr_rockford_moving_left3
-  !byte >sprite_addr_rockford_moving_left4
-  !byte >sprite_addr_rockford_moving_right1
-  !byte >sprite_addr_rockford_moving_right2
-  !byte >sprite_addr_rockford_moving_right3
-  !byte >sprite_addr_rockford_moving_right4
-  !byte >sprite_addr_bomb
-  !byte >sprite_addr_bomb3
-  !byte >sprite_addr_bomb2
-  !byte >sprite_addr_bomb1
-  !byte >sprite_addr_boulder2
-  !byte >sprite_addr_anti_space
-
-; *************************************************************************************
 ; Remapped characters for each sprite
 ;
+; IMPORTANT: this table must not go-over a page boundary
+; The high byte must be the same for all sprite characters for draw_grid_of_sprites
+!align 255, 0
+sprite_addr_all_sprites
 
 sprite_addr_space
   !byte 32,32,32,32
@@ -254,6 +139,125 @@ sprite_addr_rockford_moving_right3  ;head right, legs part
   !byte 200,205,201,206
 sprite_addr_rockford_moving_right4  ;head right, legs full
   !byte 200,207,201,208
+
+; *************************************************************************************
+; sprite addresses
+;
+sprite_addresses_low
+  !byte <sprite_addr_space
+  !byte <sprite_addr_boulder1
+  !byte <sprite_addr_bubble
+  !byte <sprite_addr_diamond1
+  !byte <sprite_addr_diamond2
+  !byte <sprite_addr_diamond3
+  !byte <sprite_addr_diamond4
+  !byte <sprite_addr_titanium_wall1
+  !byte <sprite_addr_titanium_wall2
+  !byte <sprite_addr_box
+  !byte <sprite_addr_wall1
+  !byte <sprite_addr_wall2
+  !byte <sprite_addr_explosion1
+  !byte <sprite_addr_explosion2
+  !byte <sprite_addr_explosion3
+  !byte <sprite_addr_explosion4
+  !byte <sprite_addr_magic_wall1
+  !byte <sprite_addr_magic_wall2
+  !byte <sprite_addr_magic_wall3
+  !byte <sprite_addr_magic_wall4
+  !byte <sprite_addr_amoeba1
+  !byte <sprite_addr_amoeba2
+  !byte <sprite_addr_butterfly1
+  !byte <sprite_addr_butterfly2
+  !byte <sprite_addr_butterfly3
+  !byte <sprite_addr_firefly1
+  !byte <sprite_addr_firefly2
+  !byte <sprite_addr_firefly3
+  !byte <sprite_addr_firefly4
+  !byte <sprite_addr_earth1
+  !byte <sprite_addr_earth2
+  !byte <sprite_addr_pathway
+  !byte <sprite_addr_rockford_blinking1
+  !byte <sprite_addr_rockford_blinking2
+  !byte <sprite_addr_rockford_blinking3
+  !byte <sprite_addr_rockford_winking1
+  !byte <sprite_addr_rockford_winking2
+  !byte <sprite_addr_rockford_moving_down1
+  !byte <sprite_addr_rockford_moving_down2
+  !byte <sprite_addr_rockford_moving_down3
+  !byte <sprite_addr_rockford_moving_up1
+  !byte <sprite_addr_rockford_moving_up2
+  !byte <sprite_addr_rockford_moving_left1
+  !byte <sprite_addr_rockford_moving_left2
+  !byte <sprite_addr_rockford_moving_left3
+  !byte <sprite_addr_rockford_moving_left4
+  !byte <sprite_addr_rockford_moving_right1
+  !byte <sprite_addr_rockford_moving_right2
+  !byte <sprite_addr_rockford_moving_right3
+  !byte <sprite_addr_rockford_moving_right4
+  !byte <sprite_addr_bomb
+  !byte <sprite_addr_bomb3
+  !byte <sprite_addr_bomb2
+  !byte <sprite_addr_bomb1
+  !byte <sprite_addr_boulder2
+  !byte <sprite_addr_anti_space
+
+sprite_addresses_high
+  !byte >sprite_addr_space
+  !byte >sprite_addr_boulder1
+  !byte >sprite_addr_bubble
+  !byte >sprite_addr_diamond1
+  !byte >sprite_addr_diamond2
+  !byte >sprite_addr_diamond3
+  !byte >sprite_addr_diamond4
+  !byte >sprite_addr_titanium_wall1
+  !byte >sprite_addr_titanium_wall2
+  !byte >sprite_addr_box
+  !byte >sprite_addr_wall1
+  !byte >sprite_addr_wall2
+  !byte >sprite_addr_explosion1
+  !byte >sprite_addr_explosion2
+  !byte >sprite_addr_explosion3
+  !byte >sprite_addr_explosion4
+  !byte >sprite_addr_magic_wall1
+  !byte >sprite_addr_magic_wall2
+  !byte >sprite_addr_magic_wall3
+  !byte >sprite_addr_magic_wall4
+  !byte >sprite_addr_amoeba1
+  !byte >sprite_addr_amoeba2
+  !byte >sprite_addr_butterfly1
+  !byte >sprite_addr_butterfly2
+  !byte >sprite_addr_butterfly3
+  !byte >sprite_addr_firefly1
+  !byte >sprite_addr_firefly2
+  !byte >sprite_addr_firefly3
+  !byte >sprite_addr_firefly4
+  !byte >sprite_addr_earth1
+  !byte >sprite_addr_earth2
+  !byte >sprite_addr_pathway
+  !byte >sprite_addr_rockford_blinking1
+  !byte >sprite_addr_rockford_blinking2
+  !byte >sprite_addr_rockford_blinking3
+  !byte >sprite_addr_rockford_winking1
+  !byte >sprite_addr_rockford_winking2
+  !byte >sprite_addr_rockford_moving_down1
+  !byte >sprite_addr_rockford_moving_down2
+  !byte >sprite_addr_rockford_moving_down3
+  !byte >sprite_addr_rockford_moving_up1
+  !byte >sprite_addr_rockford_moving_up2
+  !byte >sprite_addr_rockford_moving_left1
+  !byte >sprite_addr_rockford_moving_left2
+  !byte >sprite_addr_rockford_moving_left3
+  !byte >sprite_addr_rockford_moving_left4
+  !byte >sprite_addr_rockford_moving_right1
+  !byte >sprite_addr_rockford_moving_right2
+  !byte >sprite_addr_rockford_moving_right3
+  !byte >sprite_addr_rockford_moving_right4
+  !byte >sprite_addr_bomb
+  !byte >sprite_addr_bomb3
+  !byte >sprite_addr_bomb2
+  !byte >sprite_addr_bomb1
+  !byte >sprite_addr_boulder2
+  !byte >sprite_addr_anti_space
 
 ; *************************************************************************************
 ; Sprite handler routine addresses
@@ -797,15 +801,6 @@ level_selection_cycle_up
   !byte 0,2,3,4,5,1
 level_selection_cycle_down
   !byte 0,5,1,2,3,4
-
-; *************************************************************************************
-; self-mod code table
-;
-self_mod_code_table
-  ;used to reveal-hide_tiles: cmp #map_unprocessed, bcc not_titanium, lda #map_titanium_wall
-  !byte $c9, map_unprocessed, $90, 0, $a9, map_titanium_wall
-  ;used to nop out the above
-  !byte $ea, $ea, $ea, $ea, $ea, $ea
 
 ; *************************************************************************************
 ; status bar and messages

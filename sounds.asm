@@ -13,6 +13,7 @@ voice_1 = 16
 voice_2 = 32
 voice_noise = 64  ;noise on voice 2
 
+; IMPORTANT: this table must not go-over a page boundary
 !align 255, 0
 list_of_sounds
 active_sound_offset

@@ -25,6 +25,7 @@ _CLEAR_SCREEN = $c567  ;ROM: SCNCLR, clear screen
 _KERNAL_SETLFS = $ffba  ;Kernal: SETLFS, set logical first and second addresses
 _KERNAL_SETNAM = $ffbd  ;Kernal: SETNAM, set filename
 _KERNAL_LOADSP = $ffd5  ;Kernal: LOAD, load into memory from device
+_KERNAL_CLOSE = $ffc3  ;Kernal: CLOSE, close logical file
 
 _CHARACTER_BASE_ADDR = $ff13  ;65299 character data base address bits 2-7
 _TED_ROM_RAM_SELECT = $ff12  ;65298 TED data fetch ROM/RAM select bit 2
@@ -165,6 +166,13 @@ random_sound=150
 
 ; *************************************************************************************
 zero_page_start
+
+map_cols = $0b
+map_rows = $0c
+
+score_low = $0d
+score_high = $0e
+
 neighbour_cell_directions = $10  ;used as a table for the cell variables below
 cell_above_left = $10
 cell_above = $11
@@ -180,9 +188,8 @@ neighbour_cell_pointer = $19
 
 key_press = $1a
 
-irq_a = $2a
-irq_x = $2b
-irq_y = $2c
+map_address_low = $21
+map_address_high = $22
 
 sprite_address_low = $23
 sprite_address_high = $24
@@ -190,41 +197,30 @@ sprite_address_high = $24
 sound_address_low = $25
 sound_address_high = $26
 
+irq_a = $2a
+irq_x = $2b
+irq_y = $2c
+
 copy_addr1_low = $40
 copy_addr1_high = $41
 copy_addr2_low = $42
 copy_addr2_high = $43
 
-colour_addr1_low = $44
-colour_addr1_high = $45
-colour_addr2_low = $46
-colour_addr2_high = $47
+temp1 = $44
+temp2 = $45
+cache_counter = $44  ;same as addresses above
 
-map_address_low = $21
-map_address_high = $22
+map_rockford_current_position_addr_low = $46
+map_rockford_current_position_addr_high = $47
 
-cache_counter = $27
+map_rockford_end_position_addr_low = $48
+map_rockford_end_position_addr_high = $49
 
-map_cols = $0b
-map_rows = $0c
+visible_top_left_map_x = $50
+visible_top_left_map_y = $51
 
-map_rockford_current_position_addr_low = $48
-map_rockford_current_position_addr_high = $49
-
-map_rockford_end_position_addr_low = $50
-map_rockford_end_position_addr_high = $51
-
-visible_top_left_map_x = $54
-visible_top_left_map_y = $55
-
-score_low = $0d
-score_high = $0e
-
-temp1 = $56
-temp2 = $57
-
-player_lives = $72
-cave_number = $73
+player_lives = $54
+cave_number = $55
 difficulty_level = $58
 diamonds_required = $59
 time_remaining = $5a
@@ -285,10 +281,14 @@ play_ambient_sound_fx = $71
 ; *************************************************************************************
 ; Select version to play
 
+  lda #>sprite_addr_all_sprites  ;all sprite characters are on the same page
+  sta sprite_address_high
+
   jsr _CLEAR_SCREEN
   lda #0  ;Black
   sta _BACKGROUND_COLOUR_ADDR
   sta _BORDER_COLOUR_ADDR
+  sta _VOLUME_SELECT
 
   jsr select_caves_for_version  ;Let the user select the game version to play
 
@@ -521,6 +521,7 @@ intro_and_cave_select
 
   ;set title text after caching the screen (preventing draw of growing wall which is reused for title text)
   jsr update_map
+  jsr set_map_address_to_current_window
   jsr draw_grid_of_sprites
   jsr set_title_text
 
@@ -555,6 +556,7 @@ show_options_loop
   ;draw map, waiting for user input
 wait_for_keypress
   jsr update_map
+  jsr set_map_address_to_current_window
   jsr draw_grid_of_sprites
   dec tick_counter
 
@@ -668,7 +670,6 @@ play_one_life
   jsr update_status_bar
 
   ;dissolve screen when starting
-  jsr prepare_reveal_hide_code
   lda #map_space
   jsr screen_dissolve_effect
 
@@ -685,7 +686,6 @@ play_one_life
 not_game_over
 
   ;un-dissolve screen when ending
-  jsr prepare_reveal_hide_code
   lda #map_unprocessed
   jmp screen_dissolve_effect
 
@@ -768,31 +768,6 @@ initialise_variables
   rts
 
 ; *************************************************************************************
-; Routine to self-mod a section of code, used to replace code in draw_grid_of_sprites
-; for displaying text in the map and to reveal-hide tiles
-self_mod_code
-
-  ldy #0
-self_mod_code_loop
-  lda self_mod_code_table,x
-  inx
-  sta skip_tile_check,y
-  iny
-  cpy #6
-  bne self_mod_code_loop
-  rts
-
-; *************************************************************************************
-; Self-mod code applied to draw_grid_of_sprites routine to reveal-hide tiles used in cave open/close
-prepare_reveal_hide_code
-  ;add a check for unprocessed cells and set to titanium tile in draw grid (self-mod code)
-  ldx #0
-  jsr self_mod_code
-  lda #not_titanium-(skip_tile_check+4)  ;branch forward to not_titanium (+4 bytes for cmp,#,bcc,#)
-  sta skip_tile_check+3
-  rts
-
-; *************************************************************************************
 ; Apply the cave open/close tiles which show/hide the tiles on screen
 ; Performed in a loop using the game tick counter
 screen_dissolve_effect
@@ -807,6 +782,7 @@ screen_dissolve_effect
   sta tick_counter
 screen_dissolve_loop
   jsr reveal_or_hide_more_cells
+  jsr update_map_scroll_position
   jsr draw_grid_of_sprites
   dec tick_counter
   bpl screen_dissolve_loop
@@ -816,10 +792,7 @@ screen_dissolve_loop
   ; reset dissolve_to_solid_flag
   lda #map_space
   sta dissolve_to_solid_flag+1
-
-  ;for normal game play, nop out the logic applied above in draw grid (self-mod code)
-  ldx #6
-  jmp self_mod_code
+  rts
 
 ; *************************************************************************************
 ; Apply the tile show/hide routine for each game play tick
@@ -1077,6 +1050,7 @@ show_message_update
   jmp update_with_gameplay_not_active  ;Rockford is at the end position (rts from this jmp returns to jsr gameplay_loop)
 
 rockford_is_not_at_end_position
+  jsr update_map_scroll_position
   jsr draw_grid_of_sprites
   jsr update_amoeba_timing
 
@@ -1281,7 +1255,6 @@ rockford_reached_end_position
   sta message_timer
 
 not_a_bonus_end
-  jsr draw_grid_of_sprites
   lda time_remaining
   beq skip_bonus
 
@@ -1300,6 +1273,7 @@ count_up_bonus_at_end_of_stage_loop
   ldy #message_none
   jsr update_status_bar
 
+  jsr set_map_address_to_current_window
   jsr draw_grid_of_sprites
 
   lda time_remaining
@@ -1314,6 +1288,8 @@ skip_bonus
 update_during_pause_or_out_of_time
   sty save_message_number+1
   jsr update_status_bar
+
+  jsr set_map_address_to_current_window
   jsr draw_grid_of_sprites
 save_message_number
   ldy #0  ; Self-mod, see above
@@ -1363,6 +1339,7 @@ update_diamonds_required_and_check_got_all
   ; flash path (spaces)
   lda #sprite_anti_space
   sta cell_type_to_sprite
+  jsr set_map_address_to_current_window
   jsr draw_grid_of_sprites
   lda #sprite_space
   sta cell_type_to_sprite
@@ -1507,14 +1484,12 @@ char_screen_below_low
 
 draw_grid_of_sprites
 
-  jsr update_map_scroll_position
   jsr update_grid_animations
 
-  lda #0  ;skip status bar
-  sta map_rows  ;grid row counter
-  sta cache_counter
+  ldy #0
+  sty cache_counter
 loop_plot_row
-  tay
+  sty map_rows  ;grid row counter
 
   lda char_screen_low,y
   sta top_left_char_addr+1
@@ -1536,13 +1511,9 @@ loop_plot_column
 
   ;Get sprite number from map
   lda (map_address_low),y
-
-  ;Next 6 bytes are changed with self-mod code
-skip_tile_check
-  cmp #map_unprocessed
-  bcc not_titanium
-  lda #map_titanium_wall
-not_titanium
+  bpl normal_tile_sprite  ;branch if bit 7 is set to 0 (map_space is set in screen_dissolve_effect)
+  lda #map_titanium_wall  ;otherwise use the titanium wall tile (map_unprocessed is set)
+normal_tile_sprite
 
   ldx cache_counter
 
@@ -1550,14 +1521,12 @@ not_titanium
   lda cell_type_to_sprite,y
   tay
   cmp screen_cache_map,x
-  beq skip_null_tile  ;Sprite is the same, don't need to redraw it
+  beq skip_plot_tile  ;Sprite is the same, don't need to redraw it
   sta screen_cache_map,x
 
-  ;Lookup sprite high/low address in the sprite list table
+  ;Lookup sprite low address in the sprite list table, the high byte is always the same and set at the start
   lda sprite_addresses_low,y
   sta sprite_address_low
-  lda sprite_addresses_high,y
-  sta sprite_address_high
 
   ;Plot the top 2 and bottom 2 characters for the tile
   lda map_cols  ;grid column counter
@@ -1583,7 +1552,7 @@ top_right_char_addr
 bottom_right_char_addr
   sta bottom_right_char_addr,x  ;self-mod, see above
 
-skip_null_tile
+skip_plot_tile
   inc cache_counter  ;never exceeds 12 row x 20 columns (1 byte)
   ldy map_cols
   iny
@@ -1598,14 +1567,10 @@ skip_null_tile
   bcc skip_high
   inc map_address_high
 skip_high
-  inc map_rows  ;grid row counter
-  lda map_rows  ;grid row counter
-  cmp #12  ;12 rows (skip status bar in rows 0, 1)
-  ;bcc loop_plot_row
-  bcs end_draw
-  jmp loop_plot_row
-
-end_draw
+  ldy map_rows  ;grid row counter
+  iny
+  cpy #12  ;12 rows
+  bcc loop_plot_row
   rts
 
 ; *************************************************************************************
@@ -1757,6 +1722,13 @@ skip_bonus_stage
   stx visible_top_left_map_x
   stx map_cols
   sty visible_top_left_map_y
+  sty map_rows
+  jmp map_xy_position_to_map_address
+
+set_map_address_to_current_window
+  ldx visible_top_left_map_x
+  stx map_cols
+  ldy visible_top_left_map_y
   sty map_rows
   jmp map_xy_position_to_map_address
 
@@ -2500,7 +2472,7 @@ skip_storing_rockford_cell_type
   lda (map_address_low),y
   bne check_if_value_is_empty
   lda neighbour_cell_contents
-  ; don't try pushing a rock that's just fallen this tick (bit 6 set at $24c7)
+  ; don't try pushing a rock that's just fallen this tick (bit 6 set)
   cmp #$45
   beq check_if_value_is_empty
   dec delay_trying_to_push_rock
@@ -3049,19 +3021,14 @@ load_cave_number_stored
   cmp #$ff  ;Check if the cave is already stored, initially cave $ff isn't a valid one, so will always loads cave A
   beq cave_already_loaded  ; Skip if already loaded
 
-  sei
-  ldx #$0e
-  ldy #$ce
-  stx $0314
-  sty $0315
-  cli
-
   lda cave_number
   clc
   adc #65
   sta name_of_cave+4
 
 load_file_routines
+
+  sei  ;disable interrupt
 
   ;SETLFS
   lda #1    ;1 is logical file number
@@ -3081,6 +3048,14 @@ load_file_routines
   ldy #>cave_parameter_data
   jsr _KERNAL_LOADSP  ;Kernal: LOADSP, load into memory from device
 
+  ;CLOSE
+  lda #1  ;matches the logical file number used in SETLFS above
+  jsr _KERNAL_CLOSE  ;Kernal: CLOSE, close logical file
+
+  cli  ;re-enable interrupt
+
+  ;Check for load error
+  jsr clear_output8
   lda $90  ;STATUS Kernal I/O status
   and #$bf  ; Mask out bit 6 (EOI is normal at end of load)
   bne load_error
@@ -3088,18 +3063,23 @@ load_file_routines
   lda cave_number
   sta load_cave_number_stored+1
 
-  jsr setup_IRQ
-
 cave_already_loaded
   rts
 
 load_error
-;TODO: consider improving
-  jsr update_score  ;Error number shown in score
+  jsr single_byte_to_ASCII  ;convert error number in A to readable ASCII
 
-;TODO: set correct message, probably include a timeout
-  ldy #message_out_of_time
-  jsr update_status_bar
+  ;display error number in status bar top right
+  lda output8
+  sta _SCREEN_ADDR+37
+  lda output8+1
+  sta _SCREEN_ADDR+38
+  lda output8+2
+  sta _SCREEN_ADDR+39
+
+  ldx #$ff
+  jsr delay_a_bit
+
   jmp load_file_routines
 
 ;Version prefix populated in version selection
