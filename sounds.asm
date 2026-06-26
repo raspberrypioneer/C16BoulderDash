@@ -14,6 +14,7 @@ voice_2 = 32
 voice_noise = 64  ;noise on voice 2
 
 ; IMPORTANT: this table must not go-over a page boundary
+important_page_pre_list_of_sounds  ;helps check for unused space
 !align 255, 0
 list_of_sounds
 active_sound_offset

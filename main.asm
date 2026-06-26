@@ -30,6 +30,7 @@ _KERNAL_CLOSE = $ffc3  ;Kernal: CLOSE, close logical file
 _CHARACTER_BASE_ADDR = $ff13  ;65299 character data base address bits 2-7
 _TED_ROM_RAM_SELECT = $ff12  ;65298 TED data fetch ROM/RAM select bit 2
 _MULTICOLOUR_MODE = $ff07  ;65287 multicolor mode bit 4 on/off, hardware reverse characters bit 7 off/on
+_HARDWARE_IRQ = $ce0e  ;52750 hardware interrupt vector
 
 ;map elements defines
 map_space=0
@@ -65,6 +66,7 @@ map_start_large_explosion=70
 map_large_explosion_state1=19
 map_large_explosion_state2=35
 map_large_explosion_state3=51
+map_processed=127
 map_unprocessed=128
 map_deadly=192
 
@@ -164,6 +166,25 @@ growing_wall_sound=134  ;same as magic_wall_sound
 amoeba_sound=134  ;same as magic_wall_sound
 random_sound=150
 
+;other
+cell_type_nibble=%00001111  ;used to get cell type from lower nibble
+space_character=32
+screen_cols=40
+
+;map position references (hex)
+;  00 01 02
+;  40 41 42  where 41 is the current position
+;  80 81 82
+position_cell_above_left=$0
+position_cell_above=$1
+position_cell_above_right=$2
+position_cell_left=$40
+position_cell_current=$41
+position_cell_right=$42
+position_cell_below_left=$80
+position_cell_below=$81
+position_cell_below_right=$82
+
 ; *************************************************************************************
 zero_page_start
 
@@ -215,6 +236,8 @@ map_rockford_current_position_addr_high = $47
 
 map_rockford_end_position_addr_low = $48
 map_rockford_end_position_addr_high = $49
+
+temp3 = $4a
 
 visible_top_left_map_x = $50
 visible_top_left_map_y = $51
@@ -294,7 +317,7 @@ play_ambient_sound_fx = $71
 
 ; *************************************************************************************
 ; Menu to start with and return to after a game ends
-menu_loop
+.menu_loop
   jsr intro_and_cave_select
 
   lda #3
@@ -307,12 +330,11 @@ menu_loop
   sta bonus_high
 
   ;game loop for each of the player lives
-play_next_life
+.play_next_life
   jsr play_one_life
   lda player_lives
-  bne play_next_life
-
-  jmp menu_loop
+  bne .play_next_life
+  beq .menu_loop  ;always branch
 
 ; ****************************************************************************************************
 ; Let the user select which version of Boulder Dash to play and load the caves file for it
@@ -333,9 +355,9 @@ op_start_pos = (16 * 40) + 12  ;versions start position: 16 lines x 40 columns +
   sta copy_addr2_high  ;target high
 
   ;size is 560 bytes for display (16 lines of 40 columns)
-  lda #$80
+  lda #128
   sta copy_size  
-  lda #$02
+  lda #2
   sta copy_size+1
 
   jsr copy_memory
@@ -343,17 +365,17 @@ op_start_pos = (16 * 40) + 12  ;versions start position: 16 lines x 40 columns +
   ;set text colour
   lda #113  ;white bright
   ldx #161
-set_instruction_text_colour
+.set_instruction_text_colour_loop
   dex
   sta _COLOUR_SCREEN_ADDR,x
   sta _COLOUR_SCREEN_ADDR+160,x
   sta _COLOUR_SCREEN_ADDR+320,x
   sta _COLOUR_SCREEN_ADDR+480,x
-  bne set_instruction_text_colour
+  bne .set_instruction_text_colour_loop
 
   ;draw rockford with diamond
-  ldy #0
-big_rockford_draw
+  ldy #7
+.big_rockford_draw_loop
   lda #122  ;bright, off-white shade
   sta _COLOUR_SCREEN_ADDR+br_start_pos,y
   sta _COLOUR_SCREEN_ADDR+40+br_start_pos,y
@@ -371,116 +393,102 @@ big_rockford_draw
   sta _COLOUR_SCREEN_ADDR+op_start_pos,y
   sta _COLOUR_SCREEN_ADDR+op_start_pos+8,y
 
-  iny
-  cpy #8
-  bne big_rockford_draw
+  dey
+  bpl .big_rockford_draw_loop
 
   jsr setup_IRQ  ;setup joystick-keyboard actions interrupt
 
   ;version selection
-  lda version_selected+1
-version_display
-  jsr show_version_text
+  lda .version_selected+1
+.version_display
+  jsr .show_version_text
 
-version_selection_delay
-  lda #20
-  sta temp1
-  ldx #$ff
-  jsr delay_a_bit_longer
-  lda #4
-  sta version_selection_delay+1
+  ;delay a bit
+  ldy #128
+  ldx #255
+  jsr delay_a_bit
 
-version_loop
+.select_version_loop
+  ;accept input
   lda key_press
-
-  cmp #KEY_MASK_RIGHT
-  beq version_down
-
-  cmp #KEY_MASK_LEFT
-  beq version_up
-
-  cmp #KEY_MASK_UP
-  beq version_up
-
-  cmp #KEY_MASK_DOWN
-  beq version_down
-
   cmp #KEY_MASK_FIRE
-  beq end_version_selection
+  beq .version_is_selected
+  and #(KEY_MASK_UP | KEY_MASK_LEFT)
+  bne .version_up
+  lda key_press
+  and #(KEY_MASK_DOWN | KEY_MASK_RIGHT)
+  bne .version_down
+  beq .select_version_loop  ;always branch
 
-  jmp version_loop
-
-end_version_selection
-
-  lda version_selected+1  ;multiply by 4 (2 x asl)
+.version_is_selected
+  lda .version_selected+1  ;multiply by 4 (2 x asl)
   asl
   asl
   tay
   ldx #0
-set_cave_name
+.set_cave_name
   lda cave_version_prefix,y
   sta name_of_cave,x
   iny
   inx
   cpx #4
-  bne set_cave_name
+  bne .set_cave_name
 
-  ldy #0
-loading_message_loop
+  ldy #15
+.loading_message_loop
   lda status_message_loading,y
   sta _SCREEN_ADDR+op_start_pos,y
-  iny
-  cpy #16
-  bne loading_message_loop
+  dey
+  bpl .loading_message_loop
   rts
 
-version_down
-  ldy version_selected+1
+.version_down
+  ldy .version_selected+1
   lda version_selection_cycle_down,y
-  sta version_selected+1
-  jmp version_display
+  sta .version_selected+1
+  bpl .version_display
 
-version_up
-  ldy version_selected+1
+.version_up
+  ldy .version_selected+1
   lda version_selection_cycle_up,y
-  sta version_selected+1
-  jmp version_display
+  sta .version_selected+1
+  bpl .version_display
 
-show_version_text
+.show_version_text
   ldx #0  ;data position counter
   ldy #0  ;screen position counter (ok for 6 options)
 
   lda #0  ;versions line counter
   sta temp1
-version_lines_loop
+.version_lines_loop
   lda #113  ;white bright
-  sta set_version_line_colour+1  ;self-mod
+  sta .set_version_line_colour+1  ;self-mod
   lda temp1
-version_selected
+.version_selected
   cmp #0  ;self-mod, see above
-  bne draw_version_line
+  bne .draw_version_line
   lda #83 ;cyan medium brightness
-  sta set_version_line_colour+1  ;self-mod
+  sta .set_version_line_colour+1  ;self-mod
 
-draw_version_line
-  jsr draw_version_char_line  ;version line
+.draw_version_line
+  jsr .draw_version_char_line_loop  ;version line
   inc temp1
   lda temp1
   cmp #6
-  bne version_lines_loop
+  bne .version_lines_loop
   rts
 
-draw_version_char_line
+.draw_version_char_line_loop
   lda version_choices_text,x
-  beq end_version_char_line
+  beq .end_version_char_line
   sta _SCREEN_ADDR+op_start_pos+80,y
-set_version_line_colour
+.set_version_line_colour
   lda #82  ;red medium brightness (initial colour, changed with self-mod)
   sta _COLOUR_SCREEN_ADDR+op_start_pos+80,y
   inx
   iny
-  bne draw_version_char_line
-end_version_char_line
+  bne .draw_version_char_line_loop
+.end_version_char_line
   inx  ;count past the end of line character
   tya
   clc
@@ -532,21 +540,24 @@ intro_and_cave_select
   ;cave number and levels to start selection from
   lda #0
   sta cave_number
-
-  lda #1
   sta difficulty_level
 
   ;set options text
-  ldy #40
-show_options_loop
-  dey
+  ldy #39
+.show_options_loop
   lda #113  ;text etc, white
   sta _COLOUR_SCREEN_ADDR,y
 
   lda game_options,y
   sta _SCREEN_ADDR,y
-  cpy #0
-  bne show_options_loop
+  dey
+  bpl .show_options_loop
+
+  lda cave_number
+  jsr .cave_display
+
+  lda difficulty_level
+  jsr .level_display
 
   ;exception colours
   lda #82  ;cave and level, medium red
@@ -554,7 +565,7 @@ show_options_loop
   sta _COLOUR_SCREEN_ADDR+23
 
   ;draw map, waiting for user input
-wait_for_keypress
+.wait_for_keypress
   jsr update_map
   jsr set_map_address_to_current_window
   jsr draw_grid_of_sprites
@@ -562,23 +573,72 @@ wait_for_keypress
 
   lda key_press
   cmp #KEY_MASK_FIRE
-  beq exit_intro_keypress
+  beq .exit_intro_keypress
 
   cmp #KEY_MASK_UP
-  beq level_up
+  beq .level_up
 
   cmp #KEY_MASK_LEFT
-  beq cave_down
+  beq .cave_down
 
   cmp #KEY_MASK_DOWN
-  beq level_down
+  beq .level_down
 
   cmp #KEY_MASK_RIGHT
-  beq cave_up
+  beq .cave_up
+  bne .wait_for_keypress  ;always branch
 
-  jmp wait_for_keypress
+.cave_down
+  dec cave_number
+  lda cave_number
+  bpl *+4  ;skip next instruction
+  lda #15
+  sta cave_number
+  jsr .cave_display
+  bpl .wait_for_keypress  ;always branch
 
-exit_intro_keypress
+.cave_up
+  inc cave_number
+  lda cave_number
+  cmp #16
+  bne *+4  ;skip next instruction
+  lda #0
+  sta cave_number
+  jsr .cave_display
+  bpl .wait_for_keypress  ;always branch
+
+.level_down
+  dec difficulty_level
+  lda difficulty_level
+  bpl *+4  ;skip next instruction
+  lda #4
+  sta difficulty_level
+  jsr .level_display
+  bpl .wait_for_keypress  ;always branch
+
+.level_up
+  inc difficulty_level
+  lda difficulty_level
+  cmp #5
+  bne *+4  ;skip next instruction
+  lda #0
+  sta difficulty_level
+  jsr .level_display
+  bpl .wait_for_keypress  ;always branch
+
+.cave_display
+  tay
+  iny  ;start of screen codes for letters
+  sty _SCREEN_ADDR+13
+  rts
+
+.level_display
+  clc
+  adc #49  ;start of screen codes for numbers
+  sta _SCREEN_ADDR+23
+  rts
+
+.exit_intro_keypress
 
   ;switch interrupt sound actions back to normal for gameplay
   jsr note_end
@@ -601,45 +661,6 @@ exit_intro_keypress
   lda #>handler_growing_wall
   sta growing_wall_handler_high
 
-  ;reset cave colours
-  jmp set_cave_colours
-
-cave_down
-  ldy cave_number
-  lda cave_selection_cycle_down,y
-  sta cave_number
-  jmp cave_display
-
-cave_up
-  ldy cave_number
-  lda cave_selection_cycle_up,y
-  sta cave_number
-  jmp cave_display
-
-cave_display
-  ldy cave_number
-  iny  ;start of screen codes for letters
-  sty _SCREEN_ADDR+13
-  jmp wait_for_keypress
-
-level_down
-  ldy difficulty_level
-  lda level_selection_cycle_down,y
-  sta difficulty_level
-  jmp level_display
-
-level_up
-  ldy difficulty_level
-  lda level_selection_cycle_up,y
-  sta difficulty_level
-  jmp level_display
-
-level_display
-  clc
-  adc #48  ;start of screen codes for numbers
-  sta _SCREEN_ADDR+23
-  jmp wait_for_keypress
-
 handler_null
   rts
 
@@ -647,15 +668,14 @@ handler_null
 ; Set menu screen title text
 set_title_text
 
-  ldy #12
-game_title_loop
-  dey
+  ldy #11
+.game_title_loop
   lda game_title,y
   sta _SCREEN_ADDR+574,y
   lda #113  ;text etc, white
   sta _COLOUR_SCREEN_ADDR+574,y
-  cpy #0
-  bne game_title_loop
+  dey
+  bpl .game_title_loop
   rts
 
 ; *************************************************************************************
@@ -678,12 +698,12 @@ play_one_life
 
   ;check for game over
   lda player_lives
-  bne not_game_over
+  bne .not_game_over
 
   ldy #message_game_over
   jsr update_status_bar
 
-not_game_over
+.not_game_over
 
   ;un-dissolve screen when ending
   lda #map_unprocessed
@@ -698,7 +718,7 @@ prepare_cave
 
   lda cave_number
   cmp #25  ;Cave Z (intro cave)
-  bne prepare_standard_cave
+  bne .prepare_standard_cave
   ;set visible map and Rockford position for drawing grid
   lda #0
   sta visible_top_left_map_x
@@ -707,8 +727,8 @@ prepare_cave
   lda #sprite_space  ; set growing wall sprite to space sprite for intro screen, creating a blank obstacle
   sta growing_wall_sprite
   jsr _CLEAR_SCREEN
-  jmp continue_prepare_cave
-prepare_standard_cave
+  bne .continue_prepare_cave
+.prepare_standard_cave
   jsr populate_cave_tiles_pseudo_random
   jsr initialise_stage
   lda #sprite_wall1
@@ -719,27 +739,25 @@ prepare_standard_cave
   ldy #message_none
   sty saved_message
   jsr update_status_bar
-continue_prepare_cave
+.continue_prepare_cave
 
   ;initialise cave for game
   jsr set_cave_colours
   jsr draw_borders
-  jmp reset_grid_of_sprites
 
-; *************************************************************************************
-reset_grid_of_sprites
+    ;reset grid of sprites cache
     ldx #(12*20)  ;12 rows x 20 columns of sprites on a screen
-    lda #$ff
-reset_grid_of_sprites_loop
+    lda #255
+.reset_grid_of_sprites_loop
     dex
     sta screen_cache_map,x
-    bne reset_grid_of_sprites_loop
+    bne .reset_grid_of_sprites_loop
     rts
 
 ; *************************************************************************************
 initialise_variables
   
-  lda #$9f
+  lda #159  ;$9f
   sta rockford_cell_value
   lda #240
   sta ticks_since_last_direction_key_pressed
@@ -780,12 +798,12 @@ screen_dissolve_effect
 
   lda #33
   sta tick_counter
-screen_dissolve_loop
+.screen_dissolve_loop
   jsr reveal_or_hide_more_cells
   jsr update_map_scroll_position
   jsr draw_grid_of_sprites
   dec tick_counter
-  bpl screen_dissolve_loop
+  bpl .screen_dissolve_loop
 
   jsr ambient_note_end
 
@@ -803,13 +821,13 @@ reveal_or_hide_more_cells
   sta map_address_high
 
   ldx #22
-loop_over_rows
+.loop_over_rows
   lda map_address_low
   ; rows are stored in the first 40 bytes of every 64 bytes, so skip if we have
   ; exceeded the right range
   and #63
   cmp #40
-  bpl skip_to_next_row
+  bpl .skip_to_next_row
   ; progress a counter in a non-obvious pattern
   jsr get_next_random_byte
   ; if it's early in the process (tick counter is low), then branch more often so we
@@ -818,28 +836,27 @@ loop_over_rows
   lsr
   lsr
   cmp tick_counter
-  bne skip_reveal_or_hide
+  bne .skip_reveal_or_hide
   lda (map_address_low),y
   ; clear the top bit to reveal the cell...
-  and #$7f
+  and #map_processed
   ; ...or set the top bit to hide the cell
 dissolve_to_solid_flag
   ora #map_space  ;self-mod map_space or map_unprocessed
   sta (map_address_low),y
-skip_reveal_or_hide
+.skip_reveal_or_hide
   inc map_address_low
-  bne skip_increment
+  bne *+4  ;skip high byte update
   inc map_address_high
-skip_increment
   clc
-  bcc loop_over_rows
+  bcc .loop_over_rows
   ; move forward to next row. Each row is stored at 64 byte intervals. We have moved
   ; on 40 so far so add the remainder to get to the next row
-skip_to_next_row
+.skip_to_next_row
   lda #64-40
   jsr add_a_to_ptr
   dex
-  bne loop_over_rows
+  bne .loop_over_rows
   rts
 
 ; *************************************************************************************
@@ -866,27 +883,27 @@ draw_borders
   sta map_address_high
 
   ldx #21
-write_left_and_right_borders_loop
+.write_left_and_right_borders_loop
   ldy #38
-cells_to_processed_loop
+.cells_to_processed_loop
   lda (map_address_low),y
   ora #map_unprocessed
   sta (map_address_low),y
   dey
-  bne cells_to_processed_loop
-  lda #$40
+  bne .cells_to_processed_loop
+  lda #64
   jsr add_a_to_ptr
   dex
-  bne write_left_and_right_borders_loop
+  bne .write_left_and_right_borders_loop
 
 ; write the top and bottom borders using param_border_tile (steelwall if zero)
   lda param_border_tile
   ldx #39
-write_top_and_bottom_borders_loop
+.write_top_and_bottom_borders_loop
   sta tile_map_row_0,x
   sta tile_map_row_21,x
   dex
-  bpl write_top_and_bottom_borders_loop
+  bpl .write_top_and_bottom_borders_loop
   rts
 
 ; *************************************************************************************
@@ -910,9 +927,9 @@ set_cave_colours
   sta copy_addr2_high  ;target high
 
   ;size is 24 lines x 40 characters
-  lda #$c0
+  lda #192
   sta clear_size  
-  lda #$03
+  lda #3
   sta clear_size+1
 
   ;clear to colour
@@ -937,9 +954,9 @@ initialise_stage
   ; set the gravity timer
   ldy #0
   lda param_zero_gravity_time
-  beq dont_allow_rock_push_up
-  ldy #$ee  ;Special value used to detect rock has been pushed up, only applies when gravity is off
-dont_allow_rock_push_up
+  beq .dont_allow_rock_push_up
+  ldy #238  ;$ee special value used to detect rock has been pushed up, only applies when gravity is off
+.dont_allow_rock_push_up
   sta gravity_timer
   sty rock_push_directions+2
 
@@ -966,7 +983,6 @@ dont_allow_rock_push_up
 
   ;set cave parameters
   ldx difficulty_level
-  dex
   lda param_diamonds_required,x
   sta diamonds_required
   lda param_cave_time,x
@@ -975,14 +991,14 @@ dont_allow_rock_push_up
   ;show or hide the bombs character depending on use in the cave
   lda param_bombs
   sta bomb_counter
-  beq clear_bomb_on_status_bar
+  beq .clear_bomb_on_status_bar
   lda #245
   sta status_bar_line+28
-  jmp update_status_bar_from_params
-clear_bomb_on_status_bar
-  lda #32
+  bne .update_status_bar_from_params  ;always branch
+.clear_bomb_on_status_bar
+  lda #space_character
   sta status_bar_line+28
-update_status_bar_from_params
+.update_status_bar_from_params
 
   ;cave letter and difficulty level on status bar
   ldy cave_number
@@ -990,7 +1006,7 @@ update_status_bar_from_params
   sty status_bar_line+38
   lda difficulty_level
   clc
-  adc #48
+  adc #49
   sta status_bar_line+39
 
   ;update diamonds required, bombs available, player lives on status bar
@@ -1011,9 +1027,9 @@ gameplay_loop
   ldx #0
   lda number_of_amoeba_cells_found
   stx number_of_amoeba_cells_found
-  bne skip_clearing_amoeba_replacement
+  bne .skip_clearing_amoeba_replacement
   stx amoeba_replacement
-skip_clearing_amoeba_replacement
+.skip_clearing_amoeba_replacement
   stx current_amoeba_cell_type
 
   jsr update_map
@@ -1022,20 +1038,20 @@ skip_clearing_amoeba_replacement
 
   ;update status message
   lda message_timer  ;check if a message should be displayed
-  beq show_message_update
+  beq .show_message_update
   dec message_timer
   ldy saved_message
   lda message_timer
   and #4  ;every 4 ticks, clear message then switch back to saved message
-  bne show_message_update
+  bne .show_message_update
   cpy #message_hurry_up
-  bne skip_hurry_sound
+  bne .skip_hurry_sound
   lda #hurry_sound
   sta play_sound_fx
-skip_hurry_sound
+.skip_hurry_sound
 
   ldy #message_clear
-show_message_update
+.show_message_update
   jsr update_status_bar
 
   ; get the contents of the cell that rockford is influencing. This can be the cell
@@ -1043,41 +1059,41 @@ show_message_update
   ; key it can be one of the neighbouring cells.
   ; We clear the top bits to just extract the basic type.
   lda neighbour_cell_contents
-  and #$0f
+  and #cell_type_nibble
   sta neighbour_cell_contents
   cmp #map_rockford_appearing_or_end_position
-  bne rockford_is_not_at_end_position
+  bne .rockford_is_not_at_end_position
   jmp update_with_gameplay_not_active  ;Rockford is at the end position (rts from this jmp returns to jsr gameplay_loop)
 
-rockford_is_not_at_end_position
+.rockford_is_not_at_end_position
   jsr update_map_scroll_position
   jsr draw_grid_of_sprites
   jsr update_amoeba_timing
 
   ; check if the player is still alive by reading the current rockford sprite (branch if not)
   lda current_rockford_sprite
-  beq check_for_earth
+  beq .check_for_earth
   ; update game timer (sub seconds)
   dec sub_second_ticks
-  bpl check_for_earth
+  bpl .check_for_earth
   ; each 'second' of game time has 11 game ticks
   ldx #11
   stx sub_second_ticks
   ; decrement time remaining ('seconds') on the status bar
   dec time_remaining
   ; branch if there's still time left
-  bne check_for_earth
+  bne .check_for_earth
   ; out of time
   ldy #message_out_of_time
   jsr update_status_bar
   jsr update_with_gameplay_not_active
-  jmp lose_a_life
+  jmp .lose_a_life
 
-check_for_earth
+.check_for_earth
   lda time_remaining
   cmp #10
   beq hurry_up
-  jmp check_for_earth2
+  bne .check_for_earth2  ;always branch
 hurry_up
   lda #hurry_sound
   sta play_sound_fx
@@ -1085,20 +1101,20 @@ hurry_up
   sta saved_message
   lda #103
   sta message_timer
-check_for_earth2
+.check_for_earth2
   lda neighbour_cell_contents
   cmp #map_earth
-  bne skip_earth
+  bne .skip_earth
 
   ldx play_sound_fx
   cpx #rockford_move_sound
-  bcc keep_current_sound1  ;don't override a sound effect with Rockford default movement sound
+  bcc .keep_current_sound1  ;don't override a sound effect with Rockford default movement sound
   stx play_sound_fx
-keep_current_sound1
+.keep_current_sound1
 
-skip_earth
+.skip_earth
   cmp #map_diamond
-  bne skip_got_diamond
+  bne .skip_got_diamond
 
   ldx #got_diamond_sound
   stx play_sound_fx
@@ -1107,77 +1123,95 @@ skip_earth
   jsr update_diamonds_required
   jsr update_player_score
 
-skip_got_diamond
+.skip_got_diamond
   ; update game tick
   dec tick_counter
   lda tick_counter
   and #7
-  bne update_death_explosion
+  bne .update_death_explosion
   ;update bomb delay timer
   lda bomb_delay
-  beq end_update_bomb_delay
+  beq .end_update_bomb_delay
   dec bomb_delay
-end_update_bomb_delay
+.end_update_bomb_delay
   ; update gravity timer
   lda gravity_timer
-  beq end_update_gravity_timer  ;stop at zero
-  cmp #$ff
-  beq end_update_gravity_timer  ;gravity is always on if set to #$ff
+  beq .end_update_gravity_timer  ;stop at zero
+  cmp #255
+  beq .end_update_gravity_timer  ;gravity is always on if set to 255
   dec gravity_timer
-  bne end_update_gravity_timer
+  bne .end_update_gravity_timer
   lda #0
   sta rock_push_directions+2
-end_update_gravity_timer
+.end_update_gravity_timer
   ; update magic wall timer
   lda magic_wall_state
   cmp #map_magic_wall | map_anim_state1  ;active
-  bne update_death_explosion
+  bne .update_death_explosion
   dec magic_wall_timer
-update_death_explosion
+.update_death_explosion
   ldx rockford_explosion_cell_type
-  beq check_for_escape_key_pressed_to_die
+  beq .check_for_escape_key_pressed_to_die
   inx
   stx rockford_explosion_cell_type
-  cpx #$4b
-  bmi check_for_escape_key_pressed_to_die
+  cpx #75  ;$4b
+  bmi .check_for_escape_key_pressed_to_die
   ; if key is pressed at end of the death explosion sequence, then reduce player lives and exit
   lda key_press
-  bne lose_a_life
+  bne .lose_a_life
   dec rockford_explosion_cell_type
   ; branch if escape not pressed
-check_for_escape_key_pressed_to_die
+.check_for_escape_key_pressed_to_die
   lda key_press
   and #KEY_MASK_ESCAPE
-  beq check_if_pause_is_available
+  beq .check_if_pause_is_available
   ; branch if explosion already underway
   lda rockford_explosion_cell_type
-  bne check_if_pause_is_available
+  bne .check_if_pause_is_available
   ; start death explosion
   lda #map_start_large_explosion
   sta rockford_explosion_cell_type
   ; branch if on a bonus stage (no pause available)
-check_if_pause_is_available
+.check_if_pause_is_available
   lda cave_number
   cmp #16
-  bpl gameplay_loop_local
+  bpl .gameplay_loop_local
   ; check if pause pressed
   jsr check_for_pause_key
-  beq gameplay_loop_local
+  beq .gameplay_loop_local
   jsr update_with_gameplay_not_active
-gameplay_loop_local
+.gameplay_loop_local
   jmp gameplay_loop
 
-lose_a_life
+.lose_a_life
   jsr note_clear
   lda cave_number
   cmp #16  ;don't lose a life on a bonus cave, just move to next cave instead
-  bcs unsuccessful_bonus_cave
+  bcs .unsuccessful_bonus_cave
   dec player_lives
   jsr update_player_lives
   ldy #message_none
   jmp update_status_bar
-unsuccessful_bonus_cave
-  jmp calculate_next_cave_number_and_level
+.unsuccessful_bonus_cave
+  ;so continue below to calculate_next_cave_number_and_level
+
+; *************************************************************************************
+; Determine next cave to play, which depends on cave sequence, bonus caves and difficulty level
+calculate_next_cave_number_and_level
+
+  ldx cave_number
+  ldy difficulty_level
+  lda cave_play_order,x
+  sta cave_number
+  bne .store_cave_number_and_difficulty_level
+  iny
+  cpy #5
+  bne .store_cave_number_and_difficulty_level
+  ldy #0
+.store_cave_number_and_difficulty_level
+  sty difficulty_level
+  sta cave_number
+  rts
 
 ; *************************************************************************************
 ; Update screen while paused, or out of time, or at end position
@@ -1186,56 +1220,56 @@ update_with_gameplay_not_active
 
   ; check for pause key
   jsr check_for_pause_key
-  beq check_if_end_position_reached
+  beq .check_if_end_position_reached
   ; pause mode, show pause message
   lda #0
-  sta pause_counter+1
-update_while_initially_pressing_pause_loop
+  sta .pause_counter+1
+.update_while_initially_pressing_pause_loop
   jsr check_for_pause_key
-  bne update_while_initially_pressing_pause_loop
-pause_loop
-  inc pause_counter+1
+  bne .update_while_initially_pressing_pause_loop
+.pause_loop
+  inc .pause_counter+1
   ldy #message_paused
   ; toggle between showing pause and clear message every 16 ticks
-pause_counter
+.pause_counter
   lda #0  ;Self-mod, see above
-  and #$10
-  beq skip_showing_players_and_men
+  and #16
+  beq .skip_showing_players_and_men
   ldy #message_clear
-skip_showing_players_and_men
-  jsr update_during_pause_or_out_of_time
-  beq pause_loop
-update_while_finally_pressing_unpause_loop
+.skip_showing_players_and_men
+  jsr .update_during_pause_or_out_of_time
+  beq .pause_loop
+.update_while_finally_pressing_unpause_loop
   jsr check_for_pause_key
-  bne update_while_finally_pressing_unpause_loop
+  bne .update_while_finally_pressing_unpause_loop
   lda #message_none
   sta saved_message
   rts
 
-check_if_end_position_reached
+.check_if_end_position_reached
   lda neighbour_cell_contents
   ; check if end position has been reached
   cmp #map_rockford_appearing_or_end_position
-  beq rockford_reached_end_position
+  beq .rockford_reached_end_position
   ; show out of time message for a while, then return
-  lda #$3e
-  sta out_of_time_message_countdown
+  lda #62
+  sta .out_of_time_message_countdown
   ldy #message_out_of_time
-out_of_time_loop
-  jsr update_during_pause_or_out_of_time
-  bne gameplay_not_active_return
-  dec out_of_time_message_countdown
-  bne out_of_time_loop
+.out_of_time_loop
+  jsr .update_during_pause_or_out_of_time
+  bne .gameplay_not_active_return
+  dec .out_of_time_message_countdown
+  bne .out_of_time_loop
   rts
 
-out_of_time_message_countdown
+.out_of_time_message_countdown
   !byte 0
 
   ; clear rockford's final position, and set rockford on end position
-rockford_reached_end_position
+.rockford_reached_end_position
   ldy #0
   lda (map_rockford_current_position_addr_low),y
-  and #$7f
+  and #map_processed
   tax
   tya
   sta (map_rockford_current_position_addr_low),y
@@ -1244,7 +1278,7 @@ rockford_reached_end_position
 
   lda cave_number
   cmp #15  ; award a life if the end was reached on a bonus cave
-  bcc not_a_bonus_end
+  bcc .not_a_bonus_end
   inc player_lives
   jsr update_player_lives
 
@@ -1254,13 +1288,13 @@ rockford_reached_end_position
   lda #39
   sta message_timer
 
-not_a_bonus_end
+.not_a_bonus_end
   lda time_remaining
-  beq skip_bonus
+  beq .skip_bonus
 
   lda #exit_cave_sound
   sta play_ambient_sound_fx
-count_up_bonus_at_end_of_stage_loop
+.count_up_bonus_at_end_of_stage_loop
 
   ;countdown the remaining time and add to score
   dec time_remaining
@@ -1277,24 +1311,24 @@ count_up_bonus_at_end_of_stage_loop
   jsr draw_grid_of_sprites
 
   lda time_remaining
-  bne count_up_bonus_at_end_of_stage_loop
-skip_bonus
+  bne .count_up_bonus_at_end_of_stage_loop
+.skip_bonus
   jsr ambient_note_end
 
   ;Determine next cave and level to play
   jsr calculate_next_cave_number_and_level
   ldy #message_none
 
-update_during_pause_or_out_of_time
-  sty save_message_number+1
+.update_during_pause_or_out_of_time
+  sty .save_message_number+1
   jsr update_status_bar
 
   jsr set_map_address_to_current_window
   jsr draw_grid_of_sprites
-save_message_number
+.save_message_number
   ldy #0  ; Self-mod, see above
   jsr check_for_pause_key
-gameplay_not_active_return
+.gameplay_not_active_return
   rts
 
 ; *************************************************************************************
@@ -1310,20 +1344,25 @@ check_for_pause_key
 got_diamond_so_update_status_bar
 
   lda diamonds_required
-  bne update_diamonds_required_and_check_got_all
+  bne .update_diamonds_required_and_check_got_all
 
   ;already got all the diamonds, so just update score with their extra value
   lda param_diamond_extra_value
-  jsr update_score
-  jmp got_diamond_return
+  jmp update_score  ;and exit routine
 
-update_diamonds_required_and_check_got_all
+.update_diamonds_required_and_check_got_all
 
   lda param_diamond_value  ;update score with diamond value
   jsr update_score
 
   dec diamonds_required  ;subtract 1 from diamonds needed
-  bne got_diamond_return
+  bne .got_diamond_return
+
+  ; flash path (spaces)
+  lda #sprite_anti_space
+  sta cell_type_to_sprite
+  jsr set_map_address_to_current_window
+  jsr draw_grid_of_sprites
 
   ; got all the diamonds
   lda #message_got_all_diamonds
@@ -1336,17 +1375,13 @@ update_diamonds_required_and_check_got_all
   lda #map_active_exit
   sta (map_rockford_end_position_addr_low),y
 
-  ; flash path (spaces)
-  lda #sprite_anti_space
-  sta cell_type_to_sprite
-  jsr set_map_address_to_current_window
-  jsr draw_grid_of_sprites
-  lda #sprite_space
-  sta cell_type_to_sprite
-
   lda #got_all_diamonds_sound
   sta play_sound_fx
-got_diamond_return
+
+  ; un-flash path (spaces)
+  lda #sprite_space
+  sta cell_type_to_sprite
+.got_diamond_return
   rts
 
 ; *************************************************************************************
@@ -1354,20 +1389,20 @@ got_diamond_return
 populate_cave_from_loaded_data
 
   lda #>cave_map_data                ; Point to cave address high byte
-  sta plot_cave_tiles_x2+2           ; Store in self-modifying code location
+  sta .plot_cave_tiles_x2+2          ; Store in self-modifying code location
   lda #<cave_map_data                ; Point to cave address low byte
-  sta plot_cave_tiles_x2+1           ; Store in self-modifying code location
+  sta .plot_cave_tiles_x2+1          ; Store in self-modifying code location
 
-  lda #$14                           ; Set row counter to 20 (excluding steel top and bottom rows)
-  sta load_row_counter+1
+  lda #20                            ; Set row counter to 20 (excluding steel top and bottom rows)
+  sta .load_row_counter+1
   lda #<tile_map_row_1               ; Point to start of map (low)
   sta map_address_low
   lda #>tile_map_row_1               ; Point to start of map (high)
   sta map_address_high
 
-load_plot_cave_row
-  ldy #$00                           ; Set column start to 0
-plot_cave_tiles_x2
+.load_plot_cave_row
+  ldy #0                             ; Set column start to 0
+.plot_cave_tiles_x2
   lda cave_map_data                  ; The cave_map_data value after LDA is changed in this routine (self-modifying code)
   pha                                ; Store the byte (equates to 2 tiles) on the stack
   lsr                                ; left shift bits x 4 to get the nibble
@@ -1377,25 +1412,21 @@ plot_cave_tiles_x2
   sta (map_address_low),y            ; Store nibble as tile value to map
   iny                                ; Add 1 for next tile position
   pla                                ; Pull the byte off the stack
-  and #$0f                           ; Get the second nibble
+  and #cell_type_nibble
   sta (map_address_low),y            ; Store nibble as tile value to map
   iny                                ; Add 1 for next tile position
-  inc plot_cave_tiles_x2+1           ; Move onto the next byte, calculating the high bytes as well
-  lda plot_cave_tiles_x2+1
-  bne load_skip_inc_high_byte
-  inc plot_cave_tiles_x2+2
-load_skip_inc_high_byte
-  cpy #$28                           ; Check if 40 tiles plotted
-  bne plot_cave_tiles_x2             ; Continue if not
-  lda #$40                           ; Add 64 to map_address_low
+  inc .plot_cave_tiles_x2+1          ; Move onto the next byte, calculating the high bytes as well
+  lda .plot_cave_tiles_x2+1
+  bne *+5  ;skip high byte update
+  inc .plot_cave_tiles_x2+2
+  cpy #40                            ; Check if 40 tiles plotted
+  bne .plot_cave_tiles_x2            ; Continue if not
+  lda #64                            ; Add 64 to map_address_low
   jsr add_a_to_ptr
-  dec load_row_counter+1             ; Decrease row counter by 1
-load_row_counter
+  dec .load_row_counter+1            ; Decrease row counter by 1
+.load_row_counter
   lda #0  ;Self-mod, see above
-  beq populate_cave_return           ; If no more rows (counter is zero), go to end of routine
-  jmp load_plot_cave_row             ; Continue to plot the next cave row
-
-populate_cave_return
+  bne .load_plot_cave_row            ; Continue to plot the next cave row
   rts
 
 ; *************************************************************************************
@@ -1404,82 +1435,35 @@ add_a_to_ptr
   clc
   adc map_address_low
   sta map_address_low
-  bcc add_ptr_return
+  bcc *+4  ;skip high byte update
   inc map_address_high
-add_ptr_return
-  rts
-
-; ****************************************************************************************************
-delay_a_bit_longer
-
-delay_long
-  jsr delay_a_bit
-  dec temp1
-  bne delay_long
   rts
 
 ; ****************************************************************************************************
 delay_a_bit
-delay1
-  ldy $ff
-delay2
-  dey
-  bne delay2
   dex
-  bne delay1
-  rts
-
-; *************************************************************************************
-; Map address (which starts at $3000) becomes row/column in map_rows/cols
-; e.g. $3000 is 0,0   $3098 is 2,24   $3140 is 5,0   $310f is 5,15
-map_address_to_map_xy_position
-
-  lda map_address_high
-  and #7
-  sta map_rows
-  lda map_address_low
-  asl
-  rol map_rows
-  asl
-  rol map_rows
-  lda map_address_low
-  and #$3f
-  sta map_cols
-  rts
-
-; *************************************************************************************
-; Convert a grid position (row/column) to a map address
-map_xy_position_to_map_address
-
-  lda #0
-  sta map_address_low
-  lda map_rows
-  lsr
-  ror map_address_low
-  lsr
-  ror map_address_low
-  ora #>tile_map_row_0
-  sta map_address_high
-  lda map_cols
-  ora map_address_low
-  sta map_address_low
+  bne delay_a_bit
+  dey
+  bne delay_a_bit
   rts
 
 ; *************************************************************************************
 ; screen addresses, also used for colour addresses (high byte is calculated)
 ;
-char_screen_high
-  !byte $0c, $0c, $0c, $0d, $0d, $0d, $0e, $0e, $0e, $0e, $0f, $0f
-char_screen_low
-  !byte $28, $78, $c8, $18, $68, $b8, $08, $58, $a8, $f8, $48, $98
-char_screen_below_high
-  !byte $0c, $0c, $0c, $0d, $0d, $0d, $0e, $0e, $0e, $0f, $0f, $0f
-char_screen_below_low
-  !byte $50, $a0, $f0, $40, $90, $e0, $30, $80, $d0, $20, $70, $c0
+.cave_map_pos = _SCREEN_ADDR + screen_cols
+.char_screen_low  ;12 bytes of row start screen addresses for top character (low)
+  !for .i, 0, 11 {!byte <(.cave_map_pos + (.i * (2 * screen_cols)))}
+.char_screen_high  ;12 bytes of row start screen addresses for top character (high)
+  !for .i, 0, 11 {!byte >(.cave_map_pos + (.i * (2 * screen_cols)))}
+.char_screen_below_low  ;12 bytes of row start screen addresses for bottom character (low)
+  !for .i, 0, 11 {!byte <(.cave_map_pos + screen_cols + (.i * (2 * screen_cols)))}
+.char_screen_below_high  ;12 bytes of row start screen addresses for bottom character (high)
+  !for .i, 0, 11 {!byte >(.cave_map_pos + screen_cols + (.i * (2 * screen_cols)))}
 
 ; *************************************************************************************
 ; Draw a full grid of sprites, updating the current map position first
 ; IMPORTANT: this table must not go-over a page boundary
+important_page_pre_draw_grid  ;helps check for unused space
 !align 255, 0
 
 draw_grid_of_sprites
@@ -1488,32 +1472,32 @@ draw_grid_of_sprites
 
   ldy #0
   sty cache_counter
-loop_plot_row
+.loop_plot_row
   sty map_rows  ;grid row counter
 
-  lda char_screen_low,y
-  sta top_left_char_addr+1
-  sta top_right_char_addr+1
-  lda char_screen_high,y
-  sta top_left_char_addr+2
-  sta top_right_char_addr+2
+  lda .char_screen_low,y
+  sta .top_left_char_addr+1
+  sta .top_right_char_addr+1
+  lda .char_screen_high,y
+  sta .top_left_char_addr+2
+  sta .top_right_char_addr+2
 
-  lda char_screen_below_low,y
-  sta bottom_left_char_addr+1
-  sta bottom_right_char_addr+1
-  lda char_screen_below_high,y
-  sta bottom_left_char_addr+2
-  sta bottom_right_char_addr+2
+  lda .char_screen_below_low,y
+  sta .bottom_left_char_addr+1
+  sta .bottom_right_char_addr+1
+  lda .char_screen_below_high,y
+  sta .bottom_left_char_addr+2
+  sta .bottom_right_char_addr+2
 
   ldy #0
-loop_plot_column
+.loop_plot_column
   sty map_cols  ;grid column counter
 
   ;Get sprite number from map
   lda (map_address_low),y
-  bpl normal_tile_sprite  ;branch if bit 7 is set to 0 (map_space is set in screen_dissolve_effect)
+  bpl .normal_tile_sprite  ;branch if bit 7 is set to 0 (map_space is set in screen_dissolve_effect)
   lda #map_titanium_wall  ;otherwise use the titanium wall tile (map_unprocessed is set)
-normal_tile_sprite
+.normal_tile_sprite
 
   ldx cache_counter
 
@@ -1521,7 +1505,7 @@ normal_tile_sprite
   lda cell_type_to_sprite,y
   tay
   cmp screen_cache_map,x
-  beq skip_plot_tile  ;Sprite is the same, don't need to redraw it
+  beq .skip_plot_tile  ;Sprite is the same, don't need to redraw it
   sta screen_cache_map,x
 
   ;Lookup sprite low address in the sprite list table, the high byte is always the same and set at the start
@@ -1536,41 +1520,40 @@ normal_tile_sprite
   ;Transfer the 4 bytes which make up the sprite tile to the locations below (self-mod code)
   ldy #0
   lda (sprite_address_low),y
-top_left_char_addr
-  sta top_left_char_addr,x  ;self-mod, see above
+.top_left_char_addr
+  sta .top_left_char_addr,x  ;self-mod, see above
   iny
   lda (sprite_address_low),y
-bottom_left_char_addr
-  sta bottom_left_char_addr,x  ;self-mod, see above
+.bottom_left_char_addr
+  sta .bottom_left_char_addr,x  ;self-mod, see above
   iny
   inx
   lda (sprite_address_low),y
-top_right_char_addr
-  sta top_right_char_addr,x  ;self-mod, see above
+.top_right_char_addr
+  sta .top_right_char_addr,x  ;self-mod, see above
   iny
   lda (sprite_address_low),y
-bottom_right_char_addr
-  sta bottom_right_char_addr,x  ;self-mod, see above
+.bottom_right_char_addr
+  sta .bottom_right_char_addr,x  ;self-mod, see above
 
-skip_plot_tile
+.skip_plot_tile
   inc cache_counter  ;never exceeds 12 row x 20 columns (1 byte)
   ldy map_cols
   iny
   cpy #20  ;20 columns
-  bcc loop_plot_column
+  bcc .loop_plot_column
 
   ; move tile pointer on to next row (64 bytes)
   lda map_address_low
   clc
-  adc #$40
+  adc #64
   sta map_address_low
-  bcc skip_high
+  bcc *+4  ;skip high byte update
   inc map_address_high
-skip_high
   ldy map_rows  ;grid row counter
   iny
   cpy #12  ;12 rows
-  bcc loop_plot_row
+  bcc .loop_plot_row
   rts
 
 ; *************************************************************************************
@@ -1582,9 +1565,9 @@ skip_high
 ;     which then points to sprite_firefly2 and so on
 update_grid_animations
 
-  ldx #$0e
+  ldx #14
   stx temp1
-update_sprites_to_use_loop
+.update_sprites_to_use_loop
   ldy cell_types_that_always_animate,x
   ldx cell_type_to_sprite,y
   ; look up the next sprite in the animation sequence
@@ -1592,20 +1575,20 @@ update_sprites_to_use_loop
   sta cell_type_to_sprite,y
   dec temp1
   ldx temp1
-  bpl update_sprites_to_use_loop
+  bpl .update_sprites_to_use_loop
 
   ;Animate for bonus life
   lda bonus_timer  ;check if bonus animation applies
-  beq skip_bonus_animation
+  beq .skip_bonus_animation
   dec bonus_timer
   ldy #sprite_pathway
   lda bonus_timer
   and #4  ;every 4 ticks, switch from pathway to space sprite
-  bne show_bonus_animation
+  bne .show_bonus_animation
   ldy #sprite_space
-show_bonus_animation
+.show_bonus_animation
   sty cell_type_to_sprite
-skip_bonus_animation
+.skip_bonus_animation
 
   ; use the tick counter (bottom two bits scaled up by 16) to update amoeba animation (and apply to slime as well)
   lda tick_counter
@@ -1626,27 +1609,27 @@ skip_bonus_animation
 
   ; animate exit
   lda exit_cell_type
-  eor #$10
+  eor #16
   sta exit_cell_type
 
   ; update rockford idle animation
   lda ticks_since_last_direction_key_pressed
   tay
-  and #$3f
+  and #63
   tax
   lda idle_animation_data,x
   ; check for nearing the end of the idle animation (range $c0-$ff).
-  ; Use the top nybbles of the data if so.
-  cpy #$c0
-  bcc extract_lower_nybble
-  ; Near the end of the idle animation. Shift the upper nybble into the bottom nybble
+  ; Use the top nibbles of the data if so.
+  cpy #192  ;$c0
+  bcc .extract_lower_nibble
+  ; Near the end of the idle animation. Shift the upper nibble into the bottom nibble
   ; to get more idle sprites
   lsr
   lsr
   lsr
   lsr
-extract_lower_nybble
-  and #$0f
+.extract_lower_nibble
+  and #cell_type_nibble
   ; set the rockford sprite
   ora #sprite_rockford_blinking1
   sta rockford_sprite
@@ -1686,51 +1669,85 @@ update_map_scroll_position
   sbc visible_top_left_map_x  ;subtract visible top left x from calculated column position, result in A
   ldx visible_top_left_map_x
   cmp #16  ;how many tiles are visible on the left, going right
-  bmi check_for_need_to_scroll_left
+  bmi .check_for_need_to_scroll_left
   cpx #20  ;how many tiles are visible on the left, going right to stop going right
-  bpl check_for_need_to_scroll_down
+  bpl .check_for_need_to_scroll_down
   inx
-check_for_need_to_scroll_left
+.check_for_need_to_scroll_left
   cmp #4  ;how many tiles are visible on the left, going left
-  bpl check_for_need_to_scroll_down
+  bpl .check_for_need_to_scroll_down
   cpx #1  ;how many tiles are visible on the left, going left to stop going left
-  bmi check_for_need_to_scroll_down
+  bmi .check_for_need_to_scroll_down
   dex
-check_for_need_to_scroll_down
+.check_for_need_to_scroll_down
   ldy visible_top_left_map_y
   lda map_rows
   sec
   sbc visible_top_left_map_y
   cmp #8  ;how many tiles are visible above, going down
-  bmi check_for_need_to_scroll_up
+  bmi .check_for_need_to_scroll_up
   cpy #10  ;how many tiles are visible above, going down to stop going down
-  bpl check_for_bonus_stages
+  bpl .check_for_bonus_stages
   iny
-check_for_need_to_scroll_up
+.check_for_need_to_scroll_up
   cmp #4  ;how many tiles are visible above, going up
-  bpl check_for_bonus_stages
+  bpl .check_for_bonus_stages
   cpy #1  ;how many tiles are visible above, going up to stop going up
-  bmi check_for_bonus_stages
+  bmi .check_for_bonus_stages
   dey
-check_for_bonus_stages
+.check_for_bonus_stages
   lda param_intermission
-  beq skip_bonus_stage
-  lda #0  ; bonus stage window position is fixed
-  tax
-  tay
-skip_bonus_stage
+  beq .skip_bonus_stage
+  ldy #0  ; bonus stage y position is fixed (cannot scroll down, only left-right)
+.skip_bonus_stage
   stx visible_top_left_map_x
   stx map_cols
   sty visible_top_left_map_y
   sty map_rows
-  jmp map_xy_position_to_map_address
+  bpl map_xy_position_to_map_address  ;always branch
 
 set_map_address_to_current_window
   ldx visible_top_left_map_x
   stx map_cols
   ldy visible_top_left_map_y
   sty map_rows
-  jmp map_xy_position_to_map_address
+  ;so continue below to map_xy_position_to_map_address
+
+; *************************************************************************************
+; Convert a grid position (row/column) to a map address
+map_xy_position_to_map_address
+
+  lda #0
+  sta map_address_low
+  lda map_rows
+  lsr
+  ror map_address_low
+  lsr
+  ror map_address_low
+  ora #>tile_map_row_0
+  sta map_address_high
+  lda map_cols
+  ora map_address_low
+  sta map_address_low
+  rts
+
+; *************************************************************************************
+; Map address (which starts at $3000) becomes row/column in map_rows/cols
+; e.g. $3000 is 0,0   $3098 is 2,24   $3140 is 5,0   $310f is 5,15
+map_address_to_map_xy_position
+
+  lda map_address_high
+  and #7
+  sta map_rows
+  lda map_address_low
+  asl
+  rol map_rows
+  asl
+  rol map_rows
+  lda map_address_low
+  and #63
+  sta map_cols
+  rts
 
 ; *************************************************************************************
 ; Update the gameplay map with action handlers for each of the game actors
@@ -1738,7 +1755,8 @@ set_map_address_to_current_window
 update_map
 
   ; Slow it down a bit
-  ldx #$af
+  ldy #48  ;32 is good and quick; 64 not bad maybe little sluggish
+  ldx #255
   jsr delay_a_bit
 
   lda #20  ; twenty rows
@@ -1749,9 +1767,9 @@ update_map
   sta map_address_low
   ; Each row is stored in the first 40 bytes of every 64 bytes. Here we set Y to
   ; start on the second row, after the titanium wall border
-  ldy #$40
+  ldy #64
   ; loop through the twenty rows of map
-tile_map_y_loop
+.tile_map_y_loop
   lda #38  ; 38 columns (cells per row)
   sta map_cols
   lda (map_address_low),y
@@ -1763,65 +1781,63 @@ tile_map_y_loop
   tax
   ; loop through the 38 cells in a row of map
   ; read next cell contents into cell_right
-tile_map_x_loop
-  ldy #$42
+.tile_map_x_loop
+  ldy #position_cell_right
   lda (map_address_low),y
   sta cell_right
   ;Below checks if space, earth, wall, steel wall and just marks as processed, no handlers needed
   cpx #map_diamond
-  bmi mark_cell_above_as_processed_and_move_to_next_cell
+  bmi .mark_cell_above_as_processed_and_move_to_next_cell
 
   ; read cells into cell_above and cell_below variables
-  ldy #1
+  ldy #position_cell_above
   lda (map_address_low),y
   sta cell_above
-  ldy #$81
+  ldy #position_cell_below
   lda (map_address_low),y
   sta cell_below
 
   ; if current cell is already processed (top bit set), then skip to next cell
   txa
-  bmi mark_cell_above_as_processed_and_move_to_next_cell
+  bmi .mark_cell_above_as_processed_and_move_to_next_cell
   ; mark current cell as processed (set top bit)
-  ora #$80
+  ora #map_unprocessed
   tax
   ; the lower four bits are the type, each of which has a handler to process it
-  and #$0f
+  and #cell_type_nibble
   tay
   lda handler_table_high,y
   ; if we have no handler for this cell type then branch (destination was set
   ; depending on where we entered this routine)
   beq update_rock_or_diamond_that_can_fall
-  sta handler_high
+  sta .jsr_handler_instruction+2
   lda handler_table_low,y
-  sta handler_low
+  sta .jsr_handler_instruction+1
   ; call the handler for the cell based on the type (0-15)
-jsr_handler_instruction
-handler_low = jsr_handler_instruction+1
-handler_high = jsr_handler_instruction+2
+.jsr_handler_instruction
   jsr handler_rockford
 
   ; the handler may have changed the surrounding cells, store the new cell below
   lda cell_below
-  ldy #$81
+  ldy #position_cell_below
   sta (map_address_low),y
   ; store the new cell above
   lda cell_above
-  and #$7f
-  ldy #1
-  bpl move_to_next_cell  ; ALWAYS branch
+  and #map_processed
+  ldy #position_cell_above
+  bpl .move_to_next_cell  ;always branch
 
 ; *************************************************************************************
-mark_cell_above_as_processed_and_move_to_next_cell
+.mark_cell_above_as_processed_and_move_to_next_cell
 
-  ldy #1
+  ldy #position_cell_above
   lda (map_address_low),y
-  and #$7f
-move_to_next_cell
+  and #map_processed
+.move_to_next_cell
   sta (map_address_low),y
   ; store the new cell left back into the map
   lda cell_left
-  ldy #$40
+  ldy #position_cell_left
   sta (map_address_low),y
   ; update cell_left with the current cell value (in X)
   stx cell_left
@@ -1831,7 +1847,7 @@ move_to_next_cell
   inc map_address_low
   ; loop back for the rest of the cells in the row
   dec map_cols
-  bne tile_map_x_loop
+  bne .tile_map_x_loop
   ; store the final previous_cell for the row
   lda cell_left
   sta (map_address_low),y
@@ -1841,18 +1857,18 @@ move_to_next_cell
   jsr add_a_to_ptr
   ; loop back for the rest of the rows
   dec map_rows
-  bne tile_map_y_loop
+  bne .tile_map_y_loop
   ; clear top bit in final row
   ldy #38
-clear_top_bit_on_final_row_loop
+.clear_top_bit_on_final_row_loop
   lda tile_map_row_20,y
-  and #$7f
+  and #map_processed
   sta tile_map_row_20,y
   dey
-  bne clear_top_bit_on_final_row_loop
+  bne .clear_top_bit_on_final_row_loop
   ; clear top bit on end position
   lda (map_rockford_end_position_addr_low),y
-  and #$7f
+  and #map_processed
   sta (map_rockford_end_position_addr_low),y
   rts
 
@@ -1861,121 +1877,121 @@ clear_top_bit_on_final_row_loop
 update_rock_or_diamond_that_can_fall
 
   cpy #map_bomb
-  bne not_a_bomb
+  bne .not_a_bomb
   jsr handler_bomb  ;handle the bomb timer before continuing so it behaves like a rock/diamond
-not_a_bomb
+.not_a_bomb
   lda gravity_timer
-  beq gravity_on_as_normal
+  beq .gravity_on_as_normal
   ;gravity is off, so a rock/diamond/bomb can float
   cpy #map_rock
-  bne mark_cell_above_as_processed_and_move_to_next_cell  ;only want to transition the rock
+  bne .mark_cell_above_as_processed_and_move_to_next_cell  ;only want to transition the rock
   ldx #map_rock | map_unprocessed | map_anim_state1  ;switch to a bubble sprite
   lda gravity_timer
   cmp #4
-  bcs mark_cell_above_as_processed_and_move_to_next_cell
+  bcs .mark_cell_above_as_processed_and_move_to_next_cell
   ldx #map_rock | map_unprocessed | map_anim_state2  ;switch to a bubble-transition-to-rock sprite instead
-  jmp mark_cell_above_as_processed_and_move_to_next_cell  ;bypass rock/diamond/bomb falling when gravity is off
-gravity_on_as_normal
+  bne .mark_cell_above_as_processed_and_move_to_next_cell  ;always jump, bypass rock/diamond/bomb falling when gravity is off
+.gravity_on_as_normal
   cpx #map_rock | map_unprocessed | map_anim_state2
-  bne not_a_rock
+  bne .not_a_rock
   ldx #map_rock | map_unprocessed  ;switch back to rock
-not_a_rock
-  ldy #$81
+.not_a_rock
+  ldy #position_cell_below
   lda (map_address_low),y
-  beq cell_below_is_a_space
+  beq .cell_below_is_a_space
   ; check current cell
   cpx #map_deadly
-  bmi not_c0_or_above
-  jsr process_c0_or_above
-not_c0_or_above
-  and #$4f
+  bmi .not_map_deadly_or_above
+  jsr .process_map_deadly_or_above
+.not_map_deadly_or_above
+  and #%01001111
   tay
   asl
-  bmi process_next_cell
+  bmi .process_next_cell
   lda cell_types_that_rocks_or_diamonds_will_fall_off,y
-  beq process_next_cell
+  beq .process_next_cell
   lda cell_left
-  bne check_if_cell_right_is_empty
+  bne .check_if_cell_right_is_empty
   ; cell left is empty, now check below left cell
-  ldy #$80
+  ldy #position_cell_below_left
   lda (map_address_low),y
-  beq rock_or_diamond_can_fall_left_or_right
-check_if_cell_right_is_empty
+  beq .rock_or_diamond_can_fall_left_or_right
+.check_if_cell_right_is_empty
   lda cell_right
-  bne process_next_cell
+  bne .process_next_cell
   ; cell right is empty, now check below right cell
-  ldy #$82
+  ldy #position_cell_below_right
   lda (map_address_low),y
-  bne process_next_cell
+  bne .process_next_cell
   ; take the rock or diamond, and set bit 6 to indicate it has been moved this scan
   ; (so it won't be moved again). Then store it in the below left or below right cell
-rock_or_diamond_can_fall_left_or_right
+.rock_or_diamond_can_fall_left_or_right
   txa
   ora #map_anim_state4
   sta (map_address_low),y
-set_to_unprocessed_space
-  ldx #$80
-  bne process_next_cell  ; ALWAYS branch
+.set_to_unprocessed_space
+  ldx #map_unprocessed | map_space
+  bne .process_next_cell  ;always branch
 
   ; take the rock or diamond, and set bit 6 to indicate it has been moved this scan
   ; (so it won't be moved again). Then store it in the cell below.
-cell_below_is_a_space
+.cell_below_is_a_space
   txa
   ora #map_anim_state4
   sta (map_address_low),y
-  bne set_to_unprocessed_space  ; ALWAYS branch
+  bne .set_to_unprocessed_space  ; ALWAYS branch
 
-process_c0_or_above
+.process_map_deadly_or_above
   pha
   ; look up table based on type
-  and #$0f
+  and #cell_type_nibble
   tay
   lda update_cell_type_when_below_a_falling_rock_or_diamond,y
-  beq play_rock_or_diamond_fall_sound
+  beq .play_rock_or_diamond_fall_sound
   ; store in cell below
-  ldy #$81
+  ldy #position_cell_below
   sta (map_address_low),y
-play_rock_or_diamond_fall_sound
+.play_rock_or_diamond_fall_sound
 
   ldy #rock_move_sound
   txa
-  and #$0f
+  and #cell_type_nibble
   cmp #map_diamond
-  bne save_rock_or_diamond_fall_sound
+  bne .save_rock_or_diamond_fall_sound
   ldy #diamond_move_sound
-save_rock_or_diamond_fall_sound
+.save_rock_or_diamond_fall_sound
   sty play_sound_fx
 
   ; mask off bit 6 for the current cell value
   txa
-  and #$bf
+  and #%10111111
   tax
   pla
   rts
 
 ;Needed because subroutine is out of range to branch to
-process_next_cell
-  jmp mark_cell_above_as_processed_and_move_to_next_cell
+.process_next_cell
+  jmp .mark_cell_above_as_processed_and_move_to_next_cell
 
 ; *************************************************************************************
-; Handler for Rockford entry, converstion of amoeba into diamonds
-; Called once handler_rockford_intro_or_exit sets the last transition to $21 (x is an explosion sprite)
-; $21 becomes unprocessed (ora #$80) and subtracted from #$90 = $11 so not processed initially but X is set to $11, set in update_map
-; $11 becomes unprocessed (ora #$80) and subtracted from #$90 = $1 and using explosion_replacements table, becomes unprocessed Rockford
+; Handler for Rockford entry, conversion of amoeba into diamonds
+; Called once handler_rockford_intro_or_exit sets the last transition to #33 (Rockford is a mini-explosion in X to start with)
+; #33 + map_unprocessed is subtracted from 144 = 17 so not processed here initially but X is 17 next time
+; #17 + map_unprocessed is subtracted from 144 = 1 and using explosion_replacements table, becomes unprocessed Rockford
 handler_basics
 
   txa
   sec
-  sbc #$90
-  cmp #$10
-  bpl not_in_range_so_change_nothing
+  sbc #144  ;$90
+  cmp #16  ;$10
+  bpl .not_in_range_so_change_nothing
   ; cell is in the range $90-$9f (corresponding to $10 to $1f with the top bit set),
   ; so we look up the replacement in a table. This is used to replace the final step
   ; of an explosion, either with rockford during the introduction (offset $01), or a
   ; space for the outro (death) explosion (offset $03)
   tax
   lda explosion_replacements,x
-not_in_range_so_change_nothing
+.not_in_range_so_change_nothing
   tax
   rts
 
@@ -1984,22 +2000,22 @@ not_in_range_so_change_nothing
 handler_rockford_intro_or_exit
 
   txa
-  and #$7f
+  and #map_processed
   tax
   ; branch if on exit
   cpx #map_active_exit
-  beq intro_or_exit_return
+  beq .intro_or_exit_return
   ; we have found the intro square
   ; wait for flashing rockford animation to finish
   lda tick_counter
-  cmp #$f0
-  bpl intro_or_exit_return
+  cmp #240
+  bpl .intro_or_exit_return
   ; start the explosion just before gameplay starts (x is an explosion sprite)
-  ldx #$21
+  ldx #33
   lda #enter_cave_sound
   sta play_sound_fx
 
-intro_or_exit_return
+.intro_or_exit_return
   rts
 
 ; *************************************************************************************
@@ -2011,14 +2027,14 @@ handler_firefly_or_butterfly
   bpl show_large_explosion
   ; check directions in order: cell_below, cell_right, cell_left, cell_up
   ldy #8
-look_for_amoeba_or_player_loop
+.look_for_amoeba_or_player_loop
   lda neighbour_cell_directions-1,y
   and #7
   eor #7
   beq show_large_explosion
   dey
   dey
-  bne look_for_amoeba_or_player_loop
+  bne .look_for_amoeba_or_player_loop
   ; calculate direction to move in Y
   txa
   lsr
@@ -2029,27 +2045,27 @@ look_for_amoeba_or_player_loop
   ; branch if the desired direction is empty
   ldx firefly_neighbour_pointers,y
   lda neighbour_cell_directions,x
-  beq set_firefly_or_butterfly
+  beq .set_firefly_or_butterfly
   ; get the next direction in Y
   lda firefly_and_butterfly_next_direction_table,y
   tay
   ; branch if the second desired direction is empty
   ldx firefly_neighbour_pointers,y
   lda neighbour_cell_directions,x
-  beq set_firefly_or_butterfly
+  beq .set_firefly_or_butterfly
   ; set X=0 to force the use of the final possible direction
   ldx #0
   ; get the last cardinal direction that isn't a u-turn
   lda firefly_and_butterfly_next_direction_table,y
   tay
-set_firefly_or_butterfly
+.set_firefly_or_butterfly
   lda firefly_and_butterfly_cell_values,y
   cpx #0
-  bne store_firefly_and_clear_current_cell
+  bne .store_firefly_and_clear_current_cell
   tax
   rts
 
-store_firefly_and_clear_current_cell
+.store_firefly_and_clear_current_cell
   sta neighbour_cell_directions,x
   ldx #0
   rts
@@ -2061,61 +2077,60 @@ show_large_explosion
   txa
   ldx #<cell_types_that_will_turn_into_large_explosion
   and #8
-  beq set_explosion_type
+  beq .set_explosion_type
   ldx #<cell_types_that_will_turn_into_diamonds
-set_explosion_type
-  stx lookup_table_address_low
+.set_explosion_type
+  stx .read_from_table_instruction+1
   ; activate explosion sound
   lda #explosion_sound
   sta play_sound_fx
   ; read above left cell
-  ldy #0
+  ldy #position_cell_above_left
   lda (map_address_low),y
   sta cell_above_left
   ; reset current cell to zero
   sty cell_current
   ; read above right cell
-  ldy #2
+  ldy #position_cell_above_right
   lda (map_address_low),y
   sta cell_above_right
   ; read below left cell
-  ldy #$80
+  ldy #position_cell_below_left
   lda (map_address_low),y
   sta cell_below_left
   ; read below right cell
-  ldy #$82
+  ldy #position_cell_below_right
   lda (map_address_low),y
   sta cell_below_right
   ; loop 9 times to replace all the neighbour cells with diamonds or large explosion
   ldx #9
-replace_neighbours_loop
+.replace_neighbours_loop
   lda neighbour_cell_directions-1,x
-  and #$0f
+  and #cell_type_nibble
   tay
-read_from_table_instruction
-lookup_table_address_low = read_from_table_instruction+1
+.read_from_table_instruction
   lda cell_types_that_will_turn_into_large_explosion,y
-  beq skip_storing_explosion_into_cell
+  beq .skip_storing_explosion_into_cell
   sta neighbour_cell_directions-1,x
-skip_storing_explosion_into_cell
+.skip_storing_explosion_into_cell
   dex
-  bne replace_neighbours_loop
+  bne .replace_neighbours_loop
   ; write new values back into the corner cells
   ; write to above left cell
-  ldy #0
+  ldy #position_cell_above_left
   lda cell_above_left
-  and #$7f
+  and #map_processed
   sta (map_address_low),y
   ; write to above right cell
-  ldy #2
+  ldy #position_cell_above_right
   lda cell_above_right
   sta (map_address_low),y
   ; write to below left cell
-  ldy #$80
+  ldy #position_cell_below_left
   lda cell_below_left
   sta (map_address_low),y
   ; write to below right cell
-  ldy #$82
+  ldy #position_cell_below_right
   lda cell_below_right
   sta (map_address_low),y
   ldx cell_current
@@ -2126,21 +2141,21 @@ skip_storing_explosion_into_cell
 handler_growing_wall
 
   lda cell_left                                          ; read cell to the left of the growing wall
-  and #$0f                                               ; getting the cell type from the lower nybble
-  bne check_grow_right                                   ; If not zero (map_space) then examine cell to the right
+  and #cell_type_nibble                                  ; getting the cell type from the lower nibble
+  bne .check_grow_right                                   ; If not zero (map_space) then examine cell to the right
   lda #map_unprocessed | map_growing_wall                ; Otherwise replace the left cell with another growing wall
   sta cell_left
   lda #growing_wall_sound
   sta play_sound_fx
-check_grow_right
+.check_grow_right
   lda cell_right                                         ; read cell to the right of the growing wall
-  and #$0f                                               ; getting the cell type from the lower nybble
-  bne growing_wall_return                                ; If not zero (map_space) then end
+  and #cell_type_nibble                                  ; getting the cell type from the lower nibble
+  bne .growing_wall_return                                ; If not zero (map_space) then end
   lda #map_unprocessed | map_growing_wall                ; Otherwise replace the right cell with another growing wall
   sta cell_right
   lda #growing_wall_sound
   sta play_sound_fx
-growing_wall_return
+.growing_wall_return
   rts
 
 ; *************************************************************************************
@@ -2154,42 +2169,42 @@ handler_magic_wall
   ldx magic_wall_state
   ;wait for something to land on the wall to continue, see update_cell_type_when_below_a_falling_rock_or_diamond
   cmp #map_unprocessed | map_anim_state3 | map_magic_wall
-  bne check_if_magic_wall_is_active
-  ; read what's above the wall, getting the cell type from the lower nybble
+  bne .check_if_magic_wall_is_active
+  ; read what's above the wall, getting the cell type from the lower nibble
   lda cell_above
-  and #$0f
+  and #cell_type_nibble
   tay
   ; read what cell types are allowed to fall through and what is produced as a result
   ; (rocks turn into diamonds and vice versa)
   lda items_produced_by_the_magic_wall,y
-  beq skip_storing_space_above
+  beq .skip_storing_space_above
   ; something will fall into the wall, clear the cell above
   ldy #map_unprocessed | map_space
   sty cell_above
-skip_storing_space_above
+.skip_storing_space_above
   cpx #map_magic_wall | map_anim_state2  ;inactive
-  beq store_magic_wall_state
+  beq .store_magic_wall_state
   ; if the cell below isn't empty, then don't store the item below
   ldy cell_below
-  bne magic_wall_is_active
+  bne .magic_wall_is_active
   ; store the item that has fallen through the wall below
   sta cell_below
-magic_wall_is_active
+.magic_wall_is_active
   lda #magic_wall_sound
   sta play_ambient_sound_fx
   ldx #map_magic_wall | map_anim_state1  ;active
   ldy magic_wall_timer
-  bne store_magic_wall_state
+  bne .store_magic_wall_state
   ; magic wall becomes inactive once the timer has run out
   jsr ambient_note_end
   ldx #map_magic_wall | map_anim_state2  ;inactive
-store_magic_wall_state
+.store_magic_wall_state
   stx magic_wall_state
   rts
 
-check_if_magic_wall_is_active
+.check_if_magic_wall_is_active
   cpx #map_magic_wall | map_anim_state1  ;active
-  beq magic_wall_is_active
+  beq .magic_wall_is_active
   rts
 
 ; *************************************************************************************
@@ -2197,30 +2212,30 @@ check_if_magic_wall_is_active
 handler_amoeba
 
   lda amoeba_replacement
-  beq update_amoeba
+  beq .update_amoeba
   tax
   rts
 
-update_amoeba
+.update_amoeba
   inc number_of_amoeba_cells_found
   ; check for surrounding space or earth allowing the amoeba to grow
-  lda #$0e
+  lda #%00001110
   bit cell_above
-  beq amoeba_can_grow
+  beq .amoeba_can_grow
   bit cell_left
-  beq amoeba_can_grow
+  beq .amoeba_can_grow
   bit cell_right
-  beq amoeba_can_grow
+  beq .amoeba_can_grow
   bit cell_below
-  bne amoeba_return
-amoeba_can_grow
+  bne .amoeba_return
+.amoeba_can_grow
   stx current_amoeba_cell_type
   lda #amoeba_sound
   sta play_ambient_sound_fx
   inc amoeba_counter
   lda amoeba_counter
   cmp amoeba_growth_interval
-  bne amoeba_return
+  bne .amoeba_return
   lda #0
   sta amoeba_counter
   ; calculate direction to grow based on current amoeba state in top bits
@@ -2232,34 +2247,34 @@ amoeba_can_grow
   ; Y is set to 0,2,4, or 6 for the compass directions
   tay
   cpx #map_deadly
-  bmi check_for_space_or_earth
+  bmi .check_for_space_or_earth
   ; get cell value for direction Y
   lda cell_above,y
-  beq found_space_or_earth_to_grow_into
+  beq .found_space_or_earth_to_grow_into
   ; move amoeba onto next state (add 16)
-increment_top_nybble_of_amoeba
+.increment_top_nibble_of_amoeba
   txa
   clc
-  adc #$10
-  and #$7f
+  adc #%00010000
+  and #map_processed
   tax
   rts
 
   ; get cell value for direction Y
-check_for_space_or_earth
+.check_for_space_or_earth
   lda cell_above,y
   ; branch if 0 or 1 (space or earth)
-  and #$0e
-  bne increment_top_nybble_of_amoeba
-found_space_or_earth_to_grow_into
+  and #%00001110
+  bne .increment_top_nibble_of_amoeba
+.found_space_or_earth_to_grow_into
   lda tick_counter
   lsr
-  bcc store_x
-  jsr increment_top_nybble_of_amoeba
-store_x
+  bcc .store_x
+  jsr .increment_top_nibble_of_amoeba
+.store_x
   txa
   sta cell_above,y
-amoeba_return
+.amoeba_return
   rts
 
 ; *************************************************************************************
@@ -2268,32 +2283,32 @@ amoeba_return
 update_amoeba_timing
 
   lda number_of_amoeba_cells_found
-  beq check_for_amoeba_timeout
+  beq .check_for_amoeba_timeout
   ldy current_amoeba_cell_type
   bne found_amoeba
   ldx #map_unprocessed | 18  ;via handler_basics and explosion_replacements table converts to diamond
-  bne amoeba_replacement_found  ;always branch
+  bne .amoeba_replacement_found  ;always branch
 found_amoeba
-  adc #$38
-  bcc check_for_amoeba_timeout
+  adc #56
+  bcc .check_for_amoeba_timeout
   ; towards the end of the level time the amoeba turns into rock
   ldx #map_unprocessed | map_rock
-amoeba_replacement_found
+.amoeba_replacement_found
   stx amoeba_replacement
   jsr ambient_note_end
-check_for_amoeba_timeout
+.check_for_amoeba_timeout
   lda time_remaining
   cmp #50
-  bne amoeba_timing_return
+  bne .amoeba_timing_return
   lda sub_second_ticks
   cmp #7
-  bne amoeba_timing_return
+  bne .amoeba_timing_return
   lda #1
   sta amoeba_growth_interval
   ; Set A=0 and zero the amoeba counter
   lsr
   sta amoeba_counter
-amoeba_timing_return
+.amoeba_timing_return
   rts
 
 ; *************************************************************************************
@@ -2301,36 +2316,36 @@ amoeba_timing_return
 ; The slime permeability cave parameter controls how quickly rocks and diamonds can pass through it
 handler_slime
 
-  lda cell_above                     ; read what's above the wall, getting the cell type from the lower nybble
-  and #$0f
+  lda cell_above                     ; read what's above the wall, getting the cell type from the lower nibble
+  and #cell_type_nibble
   tay
   lda items_allowed_through_slime,y  ; read which cell types are allowed to fall through
-  beq slime_return                   ; If not the right type (rock / diamond / bomb) then end
-  sta item_allowed+1
+  beq .slime_return                   ; If not the right type (rock / diamond / bomb) then end
+  sta .item_allowed+1
   lda cell_below
-  bne slime_return                   ; If no space below the slime for a rock / diamond / bomb to fall then end
+  bne .slime_return                   ; If no space below the slime for a rock / diamond / bomb to fall then end
   lda param_slime_permeability
-  beq slime_pass_through             ; If slime permeability is zero, no delay in pass through
+  beq .slime_pass_through             ; If slime permeability is zero, no delay in pass through
   lda #0                             ; Otherwise continue and determine random delay
   sta random_seed1
   lda random_seed2
-  bne slime_delay                    ; If random_seed2 is not zero, use it for pseudo_random calculation
+  bne .slime_delay                    ; If random_seed2 is not zero, use it for pseudo_random calculation
   lda param_slime_permeability       ; Otherwise set random_seed2 to slime permeability value
   sta random_seed2
-slime_delay
+.slime_delay
   jsr pseudo_random                  ; Call pseudo-random routine returning random_seed1 in the accumulator
-  cmp #$04                           ; A suitable delay-comparison value
-  bcc slime_pass_through             ; If random_seed1 is less than delay-comparison value then let the item pass through
+  cmp #4                             ; A suitable delay-comparison value
+  bcc .slime_pass_through             ; If random_seed1 is less than delay-comparison value then let the item pass through
   rts                                ; Otherwise skip the item. Next time in loop, will use the last random_seed2 value and eventually pass through
 
-slime_pass_through
+.slime_pass_through
   lda #map_unprocessed | map_space   ; something will fall into the wall, clear the cell above
   sta cell_above
-item_allowed
+.item_allowed
   lda #0                             ; Self-mod, see above
   ora #map_anim_state4               ; mark the rock / diamond / bomb as fallen
   sta cell_below                     ; store the item that has fallen through the wall below
-slime_return
+.slime_return
   rts
 
 ; ****************************************************************************************************
@@ -2343,21 +2358,21 @@ pseudo_random
   lda random_seed1
   ror
   ror
-  and #$80
+  and #%10000000
   sta seeded_rand_temp1
 
   lda random_seed2
   ror
-  and #$7f
+  and #%01111111
   sta seeded_rand_temp2
 
   lda random_seed2
   ror
   ror
-  and #$80
+  and #%10000000
   clc
   adc random_seed2
-  adc #$13
+  adc #%00010011
   sta random_seed2
   lda random_seed1
   adc seeded_rand_temp1
@@ -2381,31 +2396,31 @@ seeded_rand_temp2
 handler_bomb
 
   cpx #map_bomb | map_unprocessed | $40                  ;if bomb, unprocessed and falling then suspend countdown
-  bcs bomb_return
+  bcs .bomb_return
   lda tick_counter
   and #7                                                 ;check only bits 0,1,2 of the tick counter
   cmp #7                                                 ;equals 7
-  bne bomb_return                                        ;do nothing if not 7
+  bne .bomb_return                                        ;do nothing if not 7
   txa                                                    ;x register holds current cell value
   clc
   adc #map_anim_state1                                   ;add the next animation frame
   cmp #map_bomb | map_unprocessed | map_anim_state4      ;use last animation frame to check limit
-  bcs bomb_explode                                       ;if past last frame, time to explode!
+  bcs .bomb_explode                                       ;if past last frame, time to explode!
   tax                                                    ;x register holds current cell value, updated with animation frame
   rts
 
-bomb_explode
+.bomb_explode
   ldx #map_deadly                                        ;set the cell to deadly
   jsr show_large_explosion                               ;call the explosion routine
 
   lda cell_below                                         ;update cell below (as done by other 'standard' handlers)
-  ldy #$81
+  ldy #position_cell_below
   sta (map_address_low),y
   lda cell_above                                         ;update cell below (as done by other 'standard' handlers)
-  ldy #1
+  ldy #position_cell_above
   sta (map_address_low),y
 
-bomb_return
+.bomb_return
   rts
 
 ; *************************************************************************************
@@ -2414,24 +2429,24 @@ handler_rockford
 
   stx current_rockford_sprite
   lda rockford_explosion_cell_type
-  bne start_large_explosion
+  bne .start_large_explosion
   inx
-  bne check_for_direction_key_pressed
-start_large_explosion
+  bne .check_for_direction_key_pressed
+.start_large_explosion
   ldx #map_start_large_explosion
   stx rockford_explosion_cell_type
   rts
 
-check_for_direction_key_pressed
+.check_for_direction_key_pressed
   lda key_press
   sta temp1
   and #(KEY_MASK_UP | KEY_MASK_DOWN | KEY_MASK_LEFT | KEY_MASK_RIGHT)
-  bne direction_key_pressed
+  bne .direction_key_pressed
   ; player is not moving in any direction
   ldx #map_rockford
-update_player_at_current_location
-  lda #$41
-play_movement_sound_and_update_current_position_address
+.update_player_at_current_location
+  lda #position_cell_current
+.play_movement_sound_and_update_current_position_address
   clc
   adc map_address_low
   sta map_rockford_current_position_addr_low
@@ -2440,93 +2455,92 @@ play_movement_sound_and_update_current_position_address
   sta map_rockford_current_position_addr_high
   rts
 
-direction_key_pressed
+.direction_key_pressed
   ldx #0
   stx ticks_since_last_direction_key_pressed
   dex
-get_direction_index_loop
+.get_direction_index_loop
   inx
   lda temp1
   and direction_key_table,x
-  beq get_direction_index_loop
+  beq .get_direction_index_loop
   lda rockford_cell_value_for_direction,x
-  beq skip_storing_rockford_cell_type
+  beq .skip_storing_rockford_cell_type
   sta rockford_cell_value
-skip_storing_rockford_cell_type
+.skip_storing_rockford_cell_type
   ldy neighbour_cell_pointer_from_direction_index,x
   sty neighbour_cell_pointer
   lda neighbour_cell_directions,y
   sta neighbour_cell_contents
-  and #$0f
+  and #cell_type_nibble
   tay
   ; branch if movement is not possible
   lda obstacle_control,y
-  beq check_if_value_is_empty
+  beq .check_if_value_is_empty
   ; branch if movement is freely possible
-  bmi check_for_return_pressed
+  bmi .check_for_return_pressed
   ; trying to move into something difficult to move (e.g. a rock)
   ldy rock_push_directions,x
-  beq check_if_value_is_empty
-  cpy #$ee  ;Special value used to detect rock has been pushed up
-  beq check_push_up
+  beq .check_if_value_is_empty
+  cpy #238  ;$ee special value used to detect rock has been pushed up
+  beq .check_push_up
   lda (map_address_low),y
-  bne check_if_value_is_empty
+  bne .check_if_value_is_empty
   lda neighbour_cell_contents
   ; don't try pushing a rock that's just fallen this tick (bit 6 set)
-  cmp #$45
-  beq check_if_value_is_empty
+  cmp #%01000101
+  beq .check_if_value_is_empty
   dec delay_trying_to_push_rock
-  bne check_if_value_is_empty
-  ora #$80
+  bne .check_if_value_is_empty
+  ora #map_unprocessed
   sta (map_address_low),y
   lda #4
   sta delay_trying_to_push_rock
   lda #rock_move_sound
   sta play_sound_fx
-check_for_return_pressed
+.check_for_return_pressed
   lda key_press
   and #KEY_MASK_FIRE
-  beq store_rockford_cell_value_without_return_pressed
+  beq .store_rockford_cell_value_without_return_pressed
   ; return and direction is pressed. clear the appropriate cell
-  jsr check_if_bombs_used  ;Returns accumulator used below
+  jsr .check_if_bombs_used  ;Returns accumulator used below
   ldy neighbour_cell_pointer
   sta neighbour_cell_directions,y
 
-check_if_value_is_empty
+.check_if_value_is_empty
   ldx rockford_cell_value
-  bne update_player_at_current_location
-store_rockford_cell_value_without_return_pressed
+  bne .update_player_at_current_location
+.store_rockford_cell_value_without_return_pressed
   lda play_sound_fx
-  bne keep_current_sound2  ;don't override a sound effect with Rockford default movement sound
+  bne .keep_current_sound2  ;don't override a sound effect with Rockford default movement sound
   lda #rockford_move_sound
   sta play_sound_fx
-keep_current_sound2
+.keep_current_sound2
   lda rockford_cell_value
   ldy neighbour_cell_pointer
   sta neighbour_cell_directions,y
   lda map_offset_for_direction,x
-  ldx #$80
-  jmp play_movement_sound_and_update_current_position_address
+  ldx #map_unprocessed
+  bne .play_movement_sound_and_update_current_position_address  ;always branch
 
 ;Subroutine to allow Rockford to push a rock upwards
 ;Needs to check there is a free space above the rock being pushed, allow for the push delay, then continue like other direction pushes
-check_push_up
+.check_push_up
   lda map_address_high  ;store current line pointer high/low on stack
   pha
   lda map_address_low
   pha
   sec
   lda map_address_low
-  sbc #$80  ;Need to point upwards 2 lines, so subtract (64 x 2 = 128) from pointer high/low
+  sbc #128  ;Need to point upwards 2 lines, so subtract (64 x 2 = 128) from pointer high/low
   sta map_address_low
-  bcs no_up_ptr_high_change
+  bcs *+4  ;skip high byte update
   dec map_address_high
-no_up_ptr_high_change
-  ldy #$41  ;offset the line pointer with Rockford's position
+  ldy #position_cell_current  ;offset the line pointer with Rockford's position
   lda (map_address_low),y  ;this is the cell value 2 rows above Rockford
-  bne end_check_up
+  bne .end_check_up
   dec delay_trying_to_push_rock  ;ok to push up but delay
-  bne end_check_up
+  bne .end_check_up
   lda #map_rock | map_anim_state1  ;delay over, store a rock in the cell 2 rows above Rockford
   sta (map_address_low),y
   lda #4  ;reset the delay for next time
@@ -2535,65 +2549,47 @@ no_up_ptr_high_change
   sta map_address_low
   pla
   sta map_address_high
-  jmp store_rockford_cell_value_without_return_pressed  ;continue like side/bottom pushes
-end_check_up
+  bne .store_rockford_cell_value_without_return_pressed  ;continue like side/bottom pushes
+.end_check_up
   pla  ;restore current line pointer high/low from stack
   sta map_address_low
   pla
   sta map_address_high
-  jmp check_if_value_is_empty  ;continue like side/bottom non-pushes
+  bne .check_if_value_is_empty  ;always branch, continue like side/bottom non-pushes
 
 ;Subroutine called when pressing return + key direction
 ;if bombs are allowed, place a bomb in the space of the direction, otherwise just clear the space given by the direction
-check_if_bombs_used
+.check_if_bombs_used
   lda bomb_counter
-  bne bombs_allowed
+  bne .bombs_allowed
   lda #0
   rts
 
-bombs_allowed
+.bombs_allowed
   lda neighbour_cell_contents
-  beq check_bomb_delay
+  beq .check_bomb_delay
   lda #0
   rts
 
-check_bomb_delay
+.check_bomb_delay
   lda bomb_delay
-  beq create_a_bomb
+  beq .create_a_bomb
   lda #0
   rts
 
-create_a_bomb
+.create_a_bomb
   lda #3  ;delay creation of next bomb
   sta bomb_delay
   dec bomb_counter  ;one less bomb to use
-  bne skip_no_bombs_message
+  bne .skip_no_bombs_message
   lda #message_no_bombs_left
   sta saved_message
   lda #39
   sta message_timer
-skip_no_bombs_message
+.skip_no_bombs_message
   ;update bombs available on status bar
   jsr update_bombs_available
   lda #map_bomb
-  rts
-
-; *************************************************************************************
-; Determine next cave to play, which depends on cave sequence, bonus caves and difficulty level
-calculate_next_cave_number_and_level
-
-  ldx cave_number
-  ldy difficulty_level
-  lda cave_play_order,x
-  sta cave_number
-  bne store_cave_number_and_difficulty_level
-  iny
-  cpy #6
-  bne store_cave_number_and_difficulty_level
-  ldy #1
-store_cave_number_and_difficulty_level
-  sty difficulty_level
-  sta cave_number
   rts
 
 ; *************************************************************************************
@@ -2602,15 +2598,14 @@ store_cave_number_and_difficulty_level
 update_status_bar
 
   ;draw first part of the status bar which doesn't change
-  ldx #24
-status_bar_loop_1
-  dex
+  ldx #23
+.status_bar_loop_1
   lda status_bar_line,x
   sta _SCREEN_ADDR,x
   lda #113  ;numbers etc, white
   sta _COLOUR_SCREEN_ADDR,x
-  cpx #0
-  bne status_bar_loop_1
+  dex
+  bpl .status_bar_loop_1
 
   ;Set colour for diamond, time characters used in status bar
   lda #114  ;diamond, light pink
@@ -2619,32 +2614,30 @@ status_bar_loop_1
   sta _COLOUR_SCREEN_ADDR+5
 
   ;draw second part of the status bar which may be replaced with a message
-  ldx #16
-status_bar_loop_2
-  dex
-
+  ldx #15
+.status_bar_loop_2
   cpy #message_none
-  beq draw_standard_status_bar
+  beq .draw_standard_status_bar
 
   dey
   lda status_messages,y
-  sta draw_status_bar_char+1  ;self-mod, set status bar character to message
-  jmp draw_status_bar_char
+  sta .draw_status_bar_char+1  ;self-mod, set status bar character to message
+  bpl .draw_status_bar_char
 
-draw_standard_status_bar
+.draw_standard_status_bar
   lda status_bar_line+24,x
-  sta draw_status_bar_char+1  ;self-mod, set standard status bar character
+  sta .draw_status_bar_char+1  ;self-mod, set standard status bar character
 
-draw_status_bar_char
-  lda #32  ;self-mod character
+.draw_status_bar_char
+  lda #space_character  ;self-mod character
   sta _SCREEN_ADDR+24,x
   lda #113  ;numbers etc, white
   sta _COLOUR_SCREEN_ADDR+24,x
-  cpx #0
-  bne status_bar_loop_2
+  dex
+  bpl .status_bar_loop_2
 
   cpy #message_none
-  bne end_update_status_bar
+  bne .end_update_status_bar
 
   ;Set colour for life, bomb characters used in status bar
   lda #82  ;life, medium red
@@ -2652,7 +2645,7 @@ draw_status_bar_char
   lda #118  ;bomb, light blue
   sta _COLOUR_SCREEN_ADDR+28
 
-end_update_status_bar
+.end_update_status_bar
   rts
 
 ; *************************************************************************************
@@ -2662,9 +2655,8 @@ update_score
   clc
   adc score_low
   sta score_low
-  bcc score_skip_high
+  bcc *+4  ;skip high byte update
   inc score_high
-score_skip_high
 
   ;Check for bonus every 500 points
   ;Subtract score from previous bonus (which start at zero)
@@ -2679,19 +2671,19 @@ score_skip_high
   ;Check if the result is over 500 (high byte = 2 or 1 and low byte >= 244)
   lda result_high
   cmp #1
-  bcc score_return  ; less than
-  bne award_bonus_life  ;greater than
+  bcc .score_return  ; less than
+  bne .award_bonus_life  ;greater than
   lda result_low
   cmp #244
-  bcc score_return  ; less than
+  bcc .score_return  ; less than
 
   ;Set the bonus score to the current score for checking next time
-award_bonus_life
+.award_bonus_life
   lda score_low
   sta bonus_low
   lda score_high
   sta bonus_high
-  lda #$27  ;Set the bonus timer to animate the pathway/space sprites
+  lda #39  ;Set the bonus timer to animate the pathway/space sprites
   sta bonus_timer
   inc player_lives
   jsr update_player_lives
@@ -2706,7 +2698,7 @@ award_bonus_life
   lda #39
   sta message_timer
 
-score_return
+.score_return
   rts
 
 bonus_low
@@ -2726,18 +2718,16 @@ update_player_score
   sty wip_int
   sta wip_int+1
   jsr two_bytes_to_ASCII
-  ldx #0
-plot_score
+  ldx #5
+.plot_score_loop
   lda output16,x
   sta status_bar_line+17,x
-  inx
-  cpx #5
-  bne plot_score
+  dex
+  bpl .plot_score_loop
   rts
 
 ; *************************************************************************************
 update_diamonds_required
-  jsr clear_output8
   lda diamonds_required
   jsr single_byte_to_ASCII
 
@@ -2753,9 +2743,8 @@ update_diamonds_required
 update_bombs_available
 
   lda param_bombs
-  beq cave_has_no_bombs
+  beq .cave_has_no_bombs
 
-  jsr clear_output8
   lda bomb_counter
   jsr single_byte_to_ASCII
 
@@ -2765,13 +2754,12 @@ update_bombs_available
   sta status_bar_line+30
   lda output8+2
   sta status_bar_line+31
-cave_has_no_bombs
+.cave_has_no_bombs
   rts
 
 ; *************************************************************************************
 update_cave_time
 
-  jsr clear_output8
   lda time_remaining
   jsr single_byte_to_ASCII
 
@@ -2786,7 +2774,6 @@ update_cave_time
 ; *************************************************************************************
 update_player_lives
 
-  jsr clear_output8
   lda player_lives
   jsr single_byte_to_ASCII
 
@@ -2801,52 +2788,54 @@ update_player_lives
 ; Convert byte value in A into readable ASCII returned in output8 
 single_byte_to_ASCII
 
+  sta temp3  ;byte to convert to ascii
+
+  ;clear calculation and output bytes
+  lda #0
+  sta temp1
+  lda #space_character
+  sta output8
+  sta output8+1
+  sta output8+2
+
+  lda temp3  ;byte to convert to ascii
   ldx #1
   stx wip8c
   inx
-  ldy #$40
-b2A_1
+  ldy #64
+.b2A_1
   sty wip8b
   lsr
-b2A_2
+.b2A_2
   rol
-  bcs b2A_3
+  bcs .b2A_3
   cmp wip8a,x
-  bcc b2A_4
-b2A_3
+  bcc .b2A_4
+.b2A_3
   sbc wip8a,x
   sec
-b2A_4
+.b2A_4
   rol wip8b
-  bcc b2A_2
+  bcc .b2A_2
   tay
   cpx wip8c
   lda wip8b
-  bcc b2A_5
-  beq b2A_6
+  bcc .b2A_5
+  beq .b2A_6
   stx wip8c
-b2A_5
-  eor #$30
+.b2A_5
+  eor #48
   ;set output using counter in temp1
   stx temp2  ;preserve X
   ldx temp1
   sta output8,x
   inc temp1
   ldx temp2  ;restore X
-b2A_6
+.b2A_6
   tya
-  ldy #$10
+  ldy #16
   dex
-  bpl b2A_1
-  rts
-
-clear_output8
-  lda #0
-  sta temp1
-  lda #32
-  sta output8
-  sta output8+1
-  sta output8+2
+  bpl .b2A_1
   rts
 
 wip8a
@@ -2857,16 +2846,16 @@ wip8c
   !byte 1
 
 output8
-  !byte 32,32,32  ;spaces
+  !byte space_character, space_character, space_character
 
 ; *************************************************************************************
 ; Convert byte values in wip address into readable ASCII returned in output16 
 two_bytes_to_ASCII
   ldy #0
   sty temp1
-w2A_next
+.w2A_next
   ldx #0
-w2A_slp
+.w2A_slp
   lda wip_int
   sec 
   sbc w2A_table,y
@@ -2874,32 +2863,32 @@ w2A_slp
   lda wip_int+1
   iny 
   sbc w2A_table,y
-  bcc w2A_add
+  bcc .w2A_add
   sta wip_int+1
   inx 
   dey 
   clc 
-  bcc w2A_slp
-w2A_add
+  bcc .w2A_slp
+.w2A_add
   dey
   lda wip_int
   adc w2A_table,y
   sta wip_int
   txa
-  ora #$30
+  ora #48
   ldx temp1
   sta output16,x
   inc temp1
   iny
   iny
   cpy #8
-  bcc w2A_next
+  bcc .w2A_next
   lda wip_int
-  ora #$30
+  ora #48
   ldx temp1
   sta output16,x
   inx
-  lda #32
+  lda #space_character
   sta output16,x
   rts
 
@@ -2928,88 +2917,87 @@ wip_int
 ; ****************************************************************************************************
 populate_cave_tiles_pseudo_random
 
-  ldx difficulty_level               ; Use difficulty_level (values 1 to 5) for the random seed value to use
-  dex
+  ldx difficulty_level               ; Use difficulty_level (values 0 to 4) for the random seed value to use
   lda param_random_seeds,x           ; Set random_seed2 to cave random seed
   sta random_seed2
-  lda #$00                           ; Set random_seed1 to 0
+  lda #0                             ; Set random_seed1 to 0
   sta random_seed1
 
-  lda #$16                           ; Set number of rows to 22 (includes steel top and bottom rows)
-  sta populate_row_counter+1
+  lda #22                            ; Set number of rows to 22 (includes steel top and bottom rows)
+  sta .populate_row_counter+1
   lda #<tile_map_row_1               ; Point to start of map (low)
   sta map_address_low
   lda #>tile_map_row_1               ; Point to start of map (high)
   sta map_address_high
-populate_cave_row
-  ldy #$00                           ; Set column start to 0
-populate_cave_tile
+.populate_cave_row
+  ldy #0                             ; Set column start to 0
+.populate_cave_tile
   lda tile_below_store_row,y         ; Needed for BD2 caves G, K, get previously stored tile
-  sta check_tile_override+1          ; The override tile might need to replace the random tile
+  sta .check_tile_override+1          ; The override tile might need to replace the random tile
 
   ldx param_initial_fill_tile        ; Set cave fill tile
   jsr pseudo_random                  ; Call pseudo-random routine returning random_seed1 in the accumulator
   cmp param_tile_probability         ; Compare pseudo-random value with first cave probability parameter
-  bcs check_next_probability1        ; If random_seed1 is not less than cave random compare parameter, don't plot the cave random object, try next one
+  bcs .check_next_probability1        ; If random_seed1 is not less than cave random compare parameter, don't plot the cave random object, try next one
   ldx param_tile_for_probability     ; Set the designated cave random tile
   lda param_tile_for_prob_below      ; Needed for BD2 caves G, K, set the tile below current one
   sta tile_below_store_row,y         ; to the parameter value for it (this value is 0 for most caves)
 
-check_next_probability1
+.check_next_probability1
   lda random_seed1
   cmp param_tile_probability+1       ; Compare pseudo-random value with second cave probability parameter
-  bcs check_next_probability2        ; If random_seed1 is not less than cave random compare parameter, don't plot the cave random object, try next one
+  bcs .check_next_probability2        ; If random_seed1 is not less than cave random compare parameter, don't plot the cave random object, try next one
   ldx param_tile_for_probability+1   ; Set the designated cave random tile
   lda param_tile_for_prob_below+1    ; Needed for BD2 caves G, K, set the tile below current one
   sta tile_below_store_row,y         ; to the parameter value for it (this value is 0 for most caves)
 
-check_next_probability2
+.check_next_probability2
   lda random_seed1
   cmp param_tile_probability+2       ; Compare pseudo-random value with third cave probability parameter
-  bcs check_next_probability3        ; If random_seed1 is not less than cave random compare parameter, don't plot the cave random object, try next one
+  bcs .check_next_probability3        ; If random_seed1 is not less than cave random compare parameter, don't plot the cave random object, try next one
   ldx param_tile_for_probability+2   ; Set the designated cave random tile
   lda param_tile_for_prob_below+2    ; Needed for BD2 caves G, K, set the tile below current one
   sta tile_below_store_row,y         ; to the parameter value for it (this value is 0 for most caves)
 
-check_next_probability3
+.check_next_probability3
   lda random_seed1
   cmp param_tile_probability+3       ; Compare pseudo-random value with forth cave probability parameter
-  bcs check_probability_end          ; If random_seed1 is not less than cave random compare parameter, don't plot the cave random object, continue
+  bcs .check_probability_end          ; If random_seed1 is not less than cave random compare parameter, don't plot the cave random object, continue
   ldx param_tile_for_probability+3   ; Set the designated cave random tile
   lda param_tile_for_prob_below+3    ; Needed for BD2 caves G, K, set the tile below current one
   sta tile_below_store_row,y         ; to the parameter value for it (this value is 0 for most caves)
 
-check_probability_end
+.check_probability_end
   lda (map_address_low),y            ; Get the map tile added when the cave was loaded
-  cmp #$0f                           ; Check if a null tile #$0f. This occurs at this late stage to preserve the ongoing random seed calculations
-  beq apply_random_tile_ok           ; Allow replacement with the random tile where is currently null
+  cmp #15                            ; Check if a null tile ($0f). This occurs at this late stage to preserve the ongoing random seed calculations
+  beq .apply_random_tile_ok           ; Allow replacement with the random tile where is currently null
   lda #0                             ; Needed for BD2 caves G, K, reset the tile below current one
   sta tile_below_store_row,y         ; It must not be used later for override
-  jmp check_tile_override            ; Now check for a previous override
+  beq .check_tile_override            ; always branch, now check for a previous override
 
-apply_random_tile_ok
+.apply_random_tile_ok
   txa                                ; The loaded map tile was a null, so replace with the random tile instead
   sta (map_address_low),y
 
-check_tile_override
+.check_tile_override
   lda #0                             ; Self-mod, see above
-  beq skip_below_tile                ; Needed for BD2 caves G, K, check the override tile is 0
+  beq .skip_below_tile                ; Needed for BD2 caves G, K, check the override tile is 0
   sta (map_address_low),y            ; If not then apply the override tile
   lda #0                             ; Reset the tile below current one for next time
   sta tile_below_store_row,y
 
-skip_below_tile
+.skip_below_tile
   iny                                ; Add 1 to column count
-  cpy #$28                           ; Check if 40 columns plotted
-  bne populate_cave_tile             ; Continue if not
-  lda #$40                           ; Add 64 to map_address_low
+  cpy #40                            ; Check if 40 columns plotted
+  bne .populate_cave_tile             ; Continue if not
+  lda #64                            ; Add 64 to map_address_low
   jsr add_a_to_ptr
-  dec populate_row_counter+1
-populate_row_counter
+  dec .populate_row_counter+1
+.populate_row_counter
   lda #0  ;Self-mod, see above
-  beq tiles_pseudo_return            ; Rows are zero, so end
-  jmp populate_cave_row              ; Continue to plot the next cave row
-tiles_pseudo_return
+  beq .tiles_pseudo_return            ; Rows are zero, so end
+  bne .populate_cave_row              ; Continue to plot the next cave row
+.tiles_pseudo_return
   rts
 
 ; *************************************************************************************
@@ -3018,8 +3006,8 @@ load_cave_for_version
   ;Set cave letter to load
   lda cave_number
 load_cave_number_stored
-  cmp #$ff  ;Check if the cave is already stored, initially cave $ff isn't a valid one, so will always loads cave A
-  beq cave_already_loaded  ; Skip if already loaded
+  cmp #255  ;Check if the cave is already stored, initially cave $ff isn't a valid one, so will always loads cave A
+  beq .cave_already_loaded  ; Skip if already loaded
 
   lda cave_number
   clc
@@ -3043,7 +3031,7 @@ load_file_routines
   jsr _KERNAL_SETNAM  ;Kernal: SETNAM, set filename
 
   ;LOADSP
-  lda #$00  ;0 set operation to be load (not verify)
+  lda #0  ;0 set operation to be load (not verify)
   ldx #<cave_parameter_data
   ldy #>cave_parameter_data
   jsr _KERNAL_LOADSP  ;Kernal: LOADSP, load into memory from device
@@ -3055,18 +3043,17 @@ load_file_routines
   cli  ;re-enable interrupt
 
   ;Check for load error
-  jsr clear_output8
   lda $90  ;STATUS Kernal I/O status
-  and #$bf  ; Mask out bit 6 (EOI is normal at end of load)
-  bne load_error
+  and #%10111111  ;mask out bit 6 (EOI is normal at end of load)
+  bne .load_error
 
   lda cave_number
   sta load_cave_number_stored+1
 
-cave_already_loaded
+.cave_already_loaded
   rts
 
-load_error
+.load_error
   jsr single_byte_to_ASCII  ;convert error number in A to readable ASCII
 
   ;display error number in status bar top right
@@ -3077,7 +3064,8 @@ load_error
   lda output8+2
   sta _SCREEN_ADDR+39
 
-  ldx #$ff
+  ldy #128
+  ldx #255
   jsr delay_a_bit
 
   jmp load_file_routines
@@ -3092,27 +3080,27 @@ copy_memory
 
   ldy #0
   ldx copy_size+1
-  beq copy_remaining_bytes
-copy_a_page
+  beq .copy_remaining_bytes
+.copy_a_page
   lda (copy_addr1_low),y
   sta (copy_addr2_low),y
   iny
-  bne copy_a_page
+  bne .copy_a_page
   inc copy_addr1_high
   inc copy_addr2_high
   dex
-  bne copy_a_page
-copy_remaining_bytes
+  bne .copy_a_page
+.copy_remaining_bytes
   ldx copy_size
-  beq copy_return
-copy_a_byte
+  beq .copy_return
+.copy_a_byte
   lda (copy_addr1_low),y
   sta (copy_addr2_low),y
   iny
   dex
-  bne copy_a_byte
+  bne .copy_a_byte
 
-copy_return
+.copy_return
   rts
 
 copy_size
@@ -3122,30 +3110,30 @@ copy_size
 ; Clear a number of bytes in target memory locations, using clear_size and clear_to_byte
 clear_memory
 
-  sta clear_to_byte+1  ;accumulator parameter
+  sta .clear_to_byte+1  ;accumulator parameter
 
   ldy #0
   ldx clear_size+1
-  beq clear_remaining_bytes
-clear_a_page
-  lda clear_to_byte+1
+  beq .clear_remaining_bytes
+.clear_a_page
+  lda .clear_to_byte+1
   sta (copy_addr2_low),y
   iny
-  bne clear_a_page
+  bne .clear_a_page
   inc copy_addr2_high
   dex
-  bne clear_a_page
-clear_remaining_bytes
+  bne .clear_a_page
+.clear_remaining_bytes
   ldx clear_size
-  beq clear_return
-clear_to_byte
+  beq .clear_return
+.clear_to_byte
   lda #0  ;self-mod, see above
   sta (copy_addr2_low),y
   iny
   dex
-  bne clear_to_byte
+  bne .clear_to_byte
 
-clear_return
+.clear_return
   rts
 
 clear_size
@@ -3154,6 +3142,7 @@ clear_size
 ; *************************************************************************************
 ; Custom character set for fonts and sprites
 ; IMPORTANT: Address must be fixed to this location for custom characters to work
+important_page_pre_custom_characters  ;helps check for unused space
 * = $2000
 !binary "font.bin"
 !source "spr.asm"
@@ -3168,6 +3157,7 @@ clear_size
 ;
 ; Each row has 40 bytes used for the tiles in the game, 24 unused
 ; IMPORTANT: Address must be $1000, $2000 etc, not $1100 for example!
+important_page_pre_tile_map  ;helps check for unused space
 * = $3000
 
 tile_map_row_0  ;top border
@@ -3184,6 +3174,7 @@ tile_below_store_row  ;special row for pseudo-random generated caves with extra-
 ; *************************************************************************************
 ; Cave parameters and map for one cave
 ; IMPORTANT: Below is needed to point to the correct memory location for loading caves
+important_page_pre_cavedata  ;helps check for unused space
 * = $3600
 !source "cavedata.asm"
 

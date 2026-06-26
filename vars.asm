@@ -3,6 +3,7 @@
 ;
 ; IMPORTANT: this table must not go-over a page boundary
 ; The high byte must be the same for all sprite characters for draw_grid_of_sprites
+important_page_pre_sprite_char_data  ;helps check for unused space
 !align 255, 0
 sprite_addr_all_sprites
 
@@ -504,9 +505,9 @@ firefly_and_butterfly_cell_values
   !byte (map_unprocessed | map_anim_state2) | map_butterfly
 
 ; *************************************************************************************
-; Sprites to use for idle animation of rockford. They are encoded into the nybbles of
-; each byte. First it cycles through the bottom nybbles until near the end of the idle
-; animation, then cycles through through the top nybbles
+; Sprites to use for idle animation of rockford. They are encoded into the nibbles of
+; each byte. First it cycles through the bottom nibbles until near the end of the idle
+; animation, then cycles through through the top nibbles
 ;
 idle_animation_data
   !byte 16*(sprite_rockford_tapping_foot4-32) + sprite_rockford_blinking1-32
@@ -658,6 +659,7 @@ update_cell_type_when_below_a_falling_rock_or_diamond
 ;   $ff = Rockford dies
 ; The self-mod code using lookup_table_address_low needs this (see show_large_explosion)
 ; IMPORTANT: this table must not go-over a page boundary
+important_page_pre_cells_explode  ;helps check for unused space
 !align 255, 0
 
 cell_types_that_will_turn_into_large_explosion
@@ -791,16 +793,6 @@ cave_play_order
   !byte 9, 10, 11, 18
   !byte 13, 14, 15, 19
   !byte 4, 8, 12, 0
-
-cave_selection_cycle_up
-  !byte 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,0
-cave_selection_cycle_down
-  !byte 15,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14
-
-level_selection_cycle_up
-  !byte 0,2,3,4,5,1
-level_selection_cycle_down
-  !byte 0,5,1,2,3,4
 
 ; *************************************************************************************
 ; status bar and messages
