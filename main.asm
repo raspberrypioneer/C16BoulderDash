@@ -32,6 +32,9 @@ _TED_ROM_RAM_SELECT = $ff12  ;65298 TED data fetch ROM/RAM select bit 2
 _MULTICOLOUR_MODE = $ff07  ;65287 multicolor mode bit 4 on/off, hardware reverse characters bit 7 off/on
 _HARDWARE_IRQ = $ce0e  ;52750 hardware interrupt vector
 
+;For debugging the load cycle
+_TEST_LOAD_CYCLE = 0  ;0 for normal game mode, or 1 to load each cave with a 5 second preview before loading the next one
+
 ;map elements defines
 map_space=0
 map_earth=1
@@ -188,95 +191,86 @@ position_cell_below_right=$82
 ; *************************************************************************************
 zero_page_start
 
-map_cols = $0b
-map_rows = $0c
+;Safe zero page (application software)
+cell_above_left = $d8
+cell_above = $d9
+cell_above_right = $da
+cell_left = $db
+cell_current = $dc
+cell_right = $dd
+cell_below_left = $de
+cell_below = $df
+cell_below_right = $e0
+key_press = $e1
+map_address_low = $e2
+map_address_high = $e3
+sprite_address_low = $e4
+sprite_address_high = $e5
+sound_address_low = $e6
+sound_address_high = $e7
+neighbour_cell_contents = $e8
 
-score_low = $0d
-score_high = $0e
+;Safe zero page (speech software)
+map_cols = $d0
+map_rows = $d1
+map_rockford_current_position_addr_low = $d2
+map_rockford_current_position_addr_high = $d3
+map_rockford_end_position_addr_low = $d4
+map_rockford_end_position_addr_high = $d5
+visible_top_left_map_x = $d6
+visible_top_left_map_y = $d7
 
-neighbour_cell_directions = $10  ;used as a table for the cell variables below
-cell_above_left = $10
-cell_above = $11
-cell_above_right = $12
-cell_left = $13
-cell_current = $14
-cell_right = $15
-cell_below_left = $16
-cell_below = $17
-cell_below_right = $18
+;Apparently safe zero page (group 1)
+tick_counter = $50
+player_lives = $51
+cave_number = $52
+difficulty_level = $53
+temp1 = $54
+temp2 = $55
+temp3 = $56
+play_sound_fx = $57
+play_ambient_sound_fx = $58
+rockford_cell_value = $59
+current_rockford_sprite = $5a
+rockford_explosion_cell_type = $5b
+neighbour_cell_pointer = $5c
+sub_second_ticks = $5d
 
-neighbour_cell_pointer = $19
+;Apparently safe zero page (group 2)
+score_low = $0b
+score_high = $0c
+diamonds_required = $0d
+time_remaining = $0e
+bomb_counter = $0f
+bomb_delay = $10
+gravity_timer = $11
+magic_wall_state = $12
+magic_wall_timer = $13
+amoeba_growth_interval = $14
+amoeba_counter = $15
+amoeba_replacement = $16
+number_of_amoeba_cells_found = $17
+current_amoeba_cell_type = $18
+delay_trying_to_push_rock = $19
+saved_message = $1a
+message_timer = $1b
+bonus_timer = $1c
+ticks_since_last_direction_key_pressed = $1d
 
-key_press = $1a
-
-map_address_low = $21
-map_address_high = $22
-
-sprite_address_low = $23
-sprite_address_high = $24
-
-sound_address_low = $25
-sound_address_high = $26
-
-irq_a = $2a
-irq_x = $2b
-irq_y = $2c
-
-copy_addr1_low = $40
-copy_addr1_high = $41
-copy_addr2_low = $42
-copy_addr2_high = $43
-
-temp1 = $44
-temp2 = $45
-cache_counter = $44  ;same as addresses above
-
-map_rockford_current_position_addr_low = $46
-map_rockford_current_position_addr_high = $47
-
-map_rockford_end_position_addr_low = $48
-map_rockford_end_position_addr_high = $49
-
-temp3 = $4a
-
-visible_top_left_map_x = $50
-visible_top_left_map_y = $51
-
-player_lives = $54
-cave_number = $55
-difficulty_level = $58
-diamonds_required = $59
-time_remaining = $5a
-bomb_counter = $5b
-bomb_delay = $5c
-gravity_timer = $5d
-magic_wall_state = $5e
-magic_wall_timer = $5f
-amoeba_growth_interval = $60
-amoeba_counter = $61
-amoeba_replacement = $62
-number_of_amoeba_cells_found = $63
-bonus_timer = $64
-rockford_cell_value = $65
-current_rockford_sprite = $66
-rockford_explosion_cell_type = $67
-current_amoeba_cell_type = $68
-neighbour_cell_contents = $69
-delay_trying_to_push_rock = $6a
-saved_message = $6b
-message_timer = $6c
-
-tick_counter = $6d
-sub_second_ticks = $6e
-ticks_since_last_direction_key_pressed = $6f
-play_sound_fx = $70
-play_ambient_sound_fx = $71
+;Reused / renamed
+neighbour_cell_directions = cell_above_left  ;Used as a table for cell variables
+cache_counter = temp1
+copy_addr1_low = map_address_low
+copy_addr1_high = map_address_high
+copy_addr2_low = temp2
+copy_addr2_high = temp3
 
 ; *************************************************************************************
 * = $fff
   !byte $01,$10  ;for PRG load start
-  !byte $0b,$10,$0a,$00,$9e,$34,$31,$30,$39,$00,$00,$00
-;Note                   sys   4   1   0   9         is sys 4109 i.e. $100d
+  !byte $0b,$10,$0a,$00,$9e
+  !scr "4109"  ;start address for sys 4109 i.e. $100d
+  !byte $00,$00,$00
 
 ; *************************************************************************************
 
@@ -311,7 +305,7 @@ play_ambient_sound_fx = $71
   lda #0  ;Black
   sta _BACKGROUND_COLOUR_ADDR
   sta _BORDER_COLOUR_ADDR
-  sta _VOLUME_SELECT
+  jsr note_end  ;clear all sounds
 
   jsr select_caves_for_version  ;Let the user select the game version to play
 
@@ -522,10 +516,12 @@ intro_and_cave_select
   ora #48  ;turn on voices 1,2
   sta _VOLUME_SELECT
 
+  sei
   lda #<play_theme_tune
   sta interrupt_sound+1
   lda #>play_theme_tune
   sta interrupt_sound+2
+  cli
 
   ;set title text after caching the screen (preventing draw of growing wall which is reused for title text)
   jsr update_map
@@ -646,10 +642,12 @@ intro_and_cave_select
   lda #0
   sta play_ambient_sound_fx
 
+  sei
   lda #<update_sounds
   sta interrupt_sound+1
   lda #>update_sounds
   sta interrupt_sound+2
+  cli
 
   ;add back Rockford and growing wall handlers
   lda #<handler_rockford
@@ -779,6 +777,7 @@ initialise_variables
   sta current_rockford_sprite
   sta rockford_explosion_cell_type
   sta bonus_timer
+  sta gravity_timer
   sta cell_type_to_sprite  ;ensure space is the first sprite in table
   sta play_sound_fx
   sta play_ambient_sound_fx
@@ -985,7 +984,11 @@ initialise_stage
   ldx difficulty_level
   lda param_diamonds_required,x
   sta diamonds_required
+!if _TEST_LOAD_CYCLE = 1 {
+  lda #5  ;Loading test, set a 5 second cave time to preview the cave
+} else {
   lda param_cave_time,x
+}
   sta time_remaining
 
   ;show or hide the bombs character depending on use in the cave
@@ -1084,10 +1087,15 @@ gameplay_loop
   ; branch if there's still time left
   bne .check_for_earth
   ; out of time
+  jsr update_cave_time
   ldy #message_out_of_time
   jsr update_status_bar
   jsr update_with_gameplay_not_active
+!if _TEST_LOAD_CYCLE = 1 {
+  jmp calculate_next_cave_number_and_level  ;Loading test, load next cave when out of time
+} else {
   jmp .lose_a_life
+}
 
 .check_for_earth
   lda time_remaining
@@ -1698,7 +1706,8 @@ update_map_scroll_position
 .check_for_bonus_stages
   lda param_intermission
   beq .skip_bonus_stage
-  ldy #0  ; bonus stage y position is fixed (cannot scroll down, only left-right)
+  ldx #0  ; bonus stage x and y positions are fixed (cannot scroll)
+  ldy #0
 .skip_bonus_stage
   stx visible_top_left_map_x
   stx map_cols
@@ -3014,14 +3023,18 @@ load_cave_number_stored
   adc #65
   sta name_of_cave+4
 
+  jsr restore_IRQ  ;restore to default hardware interrupt
+
 load_file_routines
 
-  sei  ;disable interrupt
+  ;CLOSE (in case open, e.g. from a previous load error)
+  lda #1    ;1 is logical file number
+  jsr _KERNAL_CLOSE
 
   ;SETLFS
   lda #1    ;1 is logical file number
   ldx $ae   ;address of the device number (disk)
-  ldy #3    ;3 means ignore the two load-to byte addresses
+  ldy #0    ;ignore the two load-to byte addresses, load to given X Y (low high) address in LOADSP
   jsr _KERNAL_SETLFS  ;Kernal: SETLFS, set logical first and second addresses
 
   ;SETNAM
@@ -3030,25 +3043,34 @@ load_file_routines
   lda #5  ;number of characters in filename (e.g. BD1-A for Boulder Dash version 1, cave A)
   jsr _KERNAL_SETNAM  ;Kernal: SETNAM, set filename
 
+  ;Wait for a safe, non-rendering screen space (the vertical blanking area) before initiating the load
+  ;This ensures the CPU has an uninterrupted block of clock cycles to hand off execution cleanly
+  ;Full disclosure - I don't why this works exactly but without it, the load regularly fails
+.wait_vblank
+  lda $FF1C              ; Read TED register containing Raster Bit 8
+  and #$01               ; Isolate the 9th bit of the scanline
+  beq .wait_vblank       ; If it's 0, we aren't in the bottom/VBLANK area yet  
+  lda $FF1D              ; Now check lower 8 bits
+  cmp #$10               ; Check if we are firmly inside safe VBLANK space
+  bcc .wait_vblank       ; Loop until safe
+
   ;LOADSP
   lda #0  ;0 set operation to be load (not verify)
   ldx #<cave_parameter_data
   ldy #>cave_parameter_data
   jsr _KERNAL_LOADSP  ;Kernal: LOADSP, load into memory from device
-
-  ;CLOSE
-  lda #1  ;matches the logical file number used in SETLFS above
-  jsr _KERNAL_CLOSE  ;Kernal: CLOSE, close logical file
-
-  cli  ;re-enable interrupt
+  bcc .load_success
 
   ;Check for load error
   lda $90  ;STATUS Kernal I/O status
   and #%10111111  ;mask out bit 6 (EOI is normal at end of load)
   bne .load_error
 
+.load_success
   lda cave_number
   sta load_cave_number_stored+1
+
+  jsr setup_IRQ
 
 .cave_already_loaded
   rts

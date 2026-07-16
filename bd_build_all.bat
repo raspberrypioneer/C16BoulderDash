@@ -56,5 +56,7 @@ echo Created cave files for %BDVER%
 exit /B
 
 :build_d64
-%PYPATH%\python .\utilities\create_d64.py
+del ".\d64\C16 Boulder Dash.d64"
+::Valid disk types supported on SD2IEC are: d64, d71 and d81
+%PYPATH%\python .\utilities\create_d64.py d64
 echo Done!

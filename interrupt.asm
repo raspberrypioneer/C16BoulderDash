@@ -7,23 +7,28 @@ setup_IRQ
   lda #>interrupt_actions
   sta $0315
   cli
+  nop
+  nop
+  rts
+
+restore_IRQ
+
+  sei
+  lda #<_HARDWARE_IRQ
+  sta $0314
+  lda #>_HARDWARE_IRQ
+  sta $0315
+  cli
+  nop
+  nop
   rts
 
 ; *************************************************************************************
 interrupt_actions
 
-  sta irq_a
-  stx irq_x
-  sty irq_y
-
 interrupt_sound
   jsr update_sounds  ;self-mod into play_theme_tune or update_sounds
   jsr read_user_input
-
-  lda irq_a
-  ldx irq_x
-  ldy irq_y
-
   jmp _HARDWARE_IRQ
 
 ; *************************************************************************************
