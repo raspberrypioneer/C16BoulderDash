@@ -309,6 +309,11 @@ copy_addr2_high = temp3
 
   jsr select_caves_for_version  ;Let the user select the game version to play
 
+  ;cave number and levels to start selection from
+  lda #0
+  sta cave_number
+  sta difficulty_level
+
 ; *************************************************************************************
 ; Menu to start with and return to after a game ends
 .menu_loop
@@ -422,7 +427,7 @@ op_start_pos = (16 * 40) + 12  ;versions start position: 16 lines x 40 columns +
   ldx #0
 .set_cave_name
   lda cave_version_prefix,y
-  sta name_of_cave,x
+  sta disk_filename,x
   iny
   inx
   cpx #4
@@ -494,34 +499,8 @@ op_start_pos = (16 * 40) + 12  ;versions start position: 16 lines x 40 columns +
 ; Load and display the intro screen, accept the cave, level, keyset from the user and start the game
 intro_and_cave_select
 
-  lda #25  ;Cave Z (intro cave)
-  sta cave_number
-
   ;set-up cave and variables
-  jsr prepare_cave
-
-  ;knock-out Rockford and growing wall handlers for now
-  ;growing wall is ignored on the intro screen, so that the title text isn't removed when drawing the map
-  lda #<handler_null
-  sta rockford_handler_low
-  sta growing_wall_handler_low
-  lda #>handler_null
-  sta rockford_handler_high
-  sta growing_wall_handler_high
-
-  ;initialise sound variables and switch interrupt sound actions to the theme tune
-  jsr note_end
-
-  lda #15  ;set volume to max
-  ora #48  ;turn on voices 1,2
-  sta _VOLUME_SELECT
-
-  sei
-  lda #<play_theme_tune
-  sta interrupt_sound+1
-  lda #>play_theme_tune
-  sta interrupt_sound+2
-  cli
+  jsr prepare_intro_cave
 
   ;set title text after caching the screen (preventing draw of growing wall which is reused for title text)
   jsr update_map
@@ -532,11 +511,6 @@ intro_and_cave_select
   ;Tick counter needed for some animation
   lda #31
   sta tick_counter
-
-  ;cave number and levels to start selection from
-  lda #0
-  sta cave_number
-  sta difficulty_level
 
   ;set options text
   ldy #39
@@ -681,11 +655,7 @@ set_title_text
 play_one_life
 
   ;set-up cave and variables
-  ldy #message_loading
-  jsr update_status_bar
   jsr prepare_cave
-  ldy #message_none
-  jsr update_status_bar
 
   ;dissolve screen when starting
   lda #map_space
@@ -708,15 +678,15 @@ play_one_life
   jmp screen_dissolve_effect
 
 ; *************************************************************************************
-prepare_cave
+prepare_intro_cave
 
-  jsr load_cave_for_version
+  lda #"Z"
+  sta disk_filename+4
+  jsr load_disk_file
+
   jsr initialise_variables
   jsr populate_cave_from_loaded_data
 
-  lda cave_number
-  cmp #25  ;Cave Z (intro cave)
-  bne .prepare_standard_cave
   ;set visible map and Rockford position for drawing grid
   lda #0
   sta visible_top_left_map_x
@@ -725,32 +695,63 @@ prepare_cave
   lda #sprite_space  ; set growing wall sprite to space sprite for intro screen, creating a blank obstacle
   sta growing_wall_sprite
   jsr _CLEAR_SCREEN
-  bne .continue_prepare_cave
-.prepare_standard_cave
+  jsr .continue_prepare_cave
+
+  ;knock-out Rockford and growing wall handlers for now
+  ;growing wall is ignored on the intro screen, so that the title text isn't removed when drawing the map
+  lda #<handler_null
+  sta rockford_handler_low
+  sta growing_wall_handler_low
+  lda #>handler_null
+  sta rockford_handler_high
+  sta growing_wall_handler_high
+
+  ;initialise sound variables and switch interrupt sound actions to the theme tune
+  jsr note_end
+
+  lda #15  ;set volume to max
+  ora #48  ;turn on voices 1,2
+  sta _VOLUME_SELECT
+
+  ;allow theme tune to be played
+  sei
+  lda #<play_theme_tune
+  sta interrupt_sound+1
+  lda #>play_theme_tune
+  sta interrupt_sound+2
+  cli
+  rts
+
+; *************************************************************************************
+prepare_cave
+
+  ldy #message_loading
+  jsr update_status_bar
+  jsr load_cave_for_version
+  jsr initialise_variables
+  jsr populate_cave_from_loaded_data
   jsr populate_cave_tiles_pseudo_random
   jsr initialise_stage
   lda #sprite_wall1
   sta growing_wall_sprite
-
   jsr update_cave_time
   jsr update_player_score
   ldy #message_none
   sty saved_message
   jsr update_status_bar
-.continue_prepare_cave
 
-  ;initialise cave for game
+.continue_prepare_cave
   jsr set_cave_colours
   jsr draw_borders
 
-    ;reset grid of sprites cache
-    ldx #(12*20)  ;12 rows x 20 columns of sprites on a screen
-    lda #255
+  ;reset grid of sprites
+  ldx #(12*20)  ;12 rows x 20 columns of sprites on a screen
+  lda #255
 .reset_grid_of_sprites_loop
-    dex
-    sta screen_cache_map,x
-    bne .reset_grid_of_sprites_loop
-    rts
+  dex
+  sta screen_cache_map,x
+  bne .reset_grid_of_sprites_loop
+  rts
 
 ; *************************************************************************************
 initialise_variables
@@ -3014,14 +3015,17 @@ load_cave_for_version
 
   ;Set cave letter to load
   lda cave_number
-load_cave_number_stored
-  cmp #255  ;Check if the cave is already stored, initially cave $ff isn't a valid one, so will always loads cave A
-  beq .cave_already_loaded  ; Skip if already loaded
-
-  lda cave_number
   clc
   adc #65
-  sta name_of_cave+4
+  cmp disk_filename+4
+  beq .cave_already_loaded  ; Skip if already loaded
+  sta disk_filename+4
+  jsr load_disk_file
+.cave_already_loaded
+  rts
+
+; *************************************************************************************
+load_disk_file
 
   jsr restore_IRQ  ;restore to default hardware interrupt
 
@@ -3038,8 +3042,8 @@ load_file_routines
   jsr _KERNAL_SETLFS  ;Kernal: SETLFS, set logical first and second addresses
 
   ;SETNAM
-  ldx #<name_of_cave
-  ldy #>name_of_cave
+  ldx #<disk_filename
+  ldy #>disk_filename
   lda #5  ;number of characters in filename (e.g. BD1-A for Boulder Dash version 1, cave A)
   jsr _KERNAL_SETNAM  ;Kernal: SETNAM, set filename
 
@@ -3048,10 +3052,10 @@ load_file_routines
   ;Full disclosure - I don't why this works exactly but without it, the load regularly fails
 .wait_vblank
   lda $FF1C              ; Read TED register containing Raster Bit 8
-  and #$01               ; Isolate the 9th bit of the scanline
+  and #1                 ; Isolate the 9th bit of the scanline
   beq .wait_vblank       ; If it's 0, we aren't in the bottom/VBLANK area yet  
   lda $FF1D              ; Now check lower 8 bits
-  cmp #$10               ; Check if we are firmly inside safe VBLANK space
+  cmp #16                ; Check if we are firmly inside safe VBLANK space
   bcc .wait_vblank       ; Loop until safe
 
   ;LOADSP
@@ -3067,13 +3071,7 @@ load_file_routines
   bne .load_error
 
 .load_success
-  lda cave_number
-  sta load_cave_number_stored+1
-
-  jsr setup_IRQ
-
-.cave_already_loaded
-  rts
+  jmp setup_IRQ
 
 .load_error
   jsr single_byte_to_ASCII  ;convert error number in A to readable ASCII
@@ -3093,7 +3091,7 @@ load_file_routines
   jmp load_file_routines
 
 ;Version prefix populated in version selection
-name_of_cave
+disk_filename
   !scr "BD1-A"
 
 ; *************************************************************************************
